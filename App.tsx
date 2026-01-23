@@ -37,19 +37,6 @@ const App: React.FC = () => {
     return saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
 
-  const [editais, setEditais] = useState<PredefinedEdital[]>([
-    {
-      id: 'edital-pf-agente',
-      name: 'Agente da Polícia Federal',
-      organization: 'PF / Cebraspe',
-      lastUpdated: new Date().toISOString(),
-      subjects: [
-        { id: 'pf-1', name: 'Português', color: '#6366f1', topics: [{ id: 't1', title: 'Compreensão de textos', completed: false, importance: 5, studyTimeMinutes: 0 }] },
-        { id: 'pf-2', name: 'Informática', color: '#10b981', topics: [{ id: 't3', title: 'Segurança da Informação', completed: false, importance: 5, studyTimeMinutes: 0 }] }
-      ]
-    }
-  ]);
-
   const saveToLocal = useCallback((key: string, data: any) => {
     localStorage.setItem(`sf_cache_${key}`, JSON.stringify(data));
   }, []);
@@ -58,6 +45,29 @@ const App: React.FC = () => {
     const data = localStorage.getItem(`sf_cache_${key}`);
     return data ? JSON.parse(data) : null;
   }, []);
+
+  // Inicializa editais com cache local ou valor padrão
+  const [editais, setEditais] = useState<PredefinedEdital[]>(() => {
+    const cached = localStorage.getItem('sf_cache_editais');
+    if (cached) return JSON.parse(cached);
+    return [
+      {
+        id: 'edital-pf-agente',
+        name: 'Agente da Polícia Federal',
+        organization: 'PF / Cebraspe',
+        lastUpdated: new Date().toISOString(),
+        subjects: [
+          { id: 'pf-1', name: 'Português', color: '#6366f1', topics: [{ id: 't1', title: 'Compreensão de textos', completed: false, importance: 5, studyTimeMinutes: 0 }] },
+          { id: 'pf-2', name: 'Informática', color: '#10b981', topics: [{ id: 't3', title: 'Segurança da Informação', completed: false, importance: 5, studyTimeMinutes: 0 }] }
+        ]
+      }
+    ];
+  });
+
+  // Salva editais no cache sempre que houver mudança
+  useEffect(() => {
+    saveToLocal('editais', editais);
+  }, [editais, saveToLocal]);
 
   const fetchUserData = useCallback(async (userId: string) => {
     const cachedSubjects = loadFromLocal('subjects');
@@ -72,13 +82,15 @@ const App: React.FC = () => {
 
     setIsSyncing(true);
     try {
-      const [subRes, mockRes, logRes] = await Promise.all([
+      const [subRes, mockRes, logRes, editalRes] = await Promise.all([
         supabase.from('subjects').select('*').order('created_at', { ascending: true }),
         supabase.from('mocks').select('*').order('date', { ascending: false }),
-        supabase.from('study_logs').select('*').order('date', { ascending: false })
+        supabase.from('study_logs').select('*').order('date', { ascending: false }),
+        supabase.from('predefined_editais').select('*') // Busca o catálogo mestre do banco
       ]);
 
-      if (subRes.data) {
+      // Só atualiza o estado local se o banco retornar dados para evitar wipe por erro de sincronização
+      if (subRes.data && subRes.data.length > 0) {
         const mapped = subRes.data.map((s, i) => ({
           ...s, id: String(s.id), topics: s.topics || [],
           color: s.color || ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'][i % 5]
@@ -87,17 +99,23 @@ const App: React.FC = () => {
         saveToLocal('subjects', mapped);
       }
 
-      if (mockRes.data) {
+      if (mockRes.data && mockRes.data.length > 0) {
         const mapped = mockRes.data.map(m => ({ ...m, id: String(m.id) }));
         setMocks(mapped);
         saveToLocal('mocks', mapped);
       }
 
-      if (logRes.data) {
+      if (logRes.data && logRes.data.length > 0) {
         const mapped = logRes.data.map(l => ({ ...l, id: String(l.id) }));
         setStudyLogs(mapped);
         saveToLocal('logs', mapped);
       }
+
+      if (editalRes.data && editalRes.data.length > 0) {
+        setEditais(editalRes.data);
+        saveToLocal('editais', editalRes.data);
+      }
+
       setIsOffline(false);
     } catch (e: any) {
       if (isNetworkError(e)) setIsOffline(true);
@@ -160,7 +178,7 @@ const App: React.FC = () => {
       minutes, 
       topicId, 
       subjectId, 
-      date: date, // Usando a data passada pelo modal
+      date: date,
       type: 'estudo' 
     };
 

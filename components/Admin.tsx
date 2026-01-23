@@ -28,7 +28,6 @@ const Admin: React.FC<AdminProps> = ({ users, setUsers, editais, setEditais, vie
   
   const colors = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6'];
 
-  // --- Telemetria de Usuários ---
   const stats = useMemo(() => ({
     total: users.length,
     active: users.filter(u => u.status === 'active').length,
@@ -44,12 +43,10 @@ const Admin: React.FC<AdminProps> = ({ users, setUsers, editais, setEditais, vie
     );
   }, [users, searchTerm]);
 
-  // --- Lógica de Usuários ---
   const updateUserInDb = async (userId: string, updates: Partial<any>) => {
     if (!supabase) return;
     setLoading(userId);
     try {
-      // Nota: Profiles é a tabela que espelha os dados do auth.users
       const { error } = await supabase
         .from('profiles')
         .update(updates)
@@ -74,6 +71,58 @@ const Admin: React.FC<AdminProps> = ({ users, setUsers, editais, setEditais, vie
     updateUserInDb(userId, { role: newRole });
   };
 
+  const addSubjectToEdital = () => {
+    setEditalSubjects(prev => [...prev, { 
+      id: `edsub-${Date.now()}`, 
+      name: 'Nova Disciplina', 
+      topics: [], 
+      color: colors[prev.length % colors.length] 
+    }]);
+  };
+
+  const removeSubjectFromEdital = (id: string) => {
+    if (!window.confirm("Remover disciplina do catálogo?")) return;
+    setEditalSubjects(prev => prev.filter(s => String(s.id) !== String(id)));
+  };
+
+  const handleTopicsChange = (sIdx: number, text: string) => {
+    const lines = text.split('\n').filter(l => l.trim() !== '');
+    const newTopics = lines.map(line => ({ id: Math.random().toString(36).substr(2, 9), title: line.trim(), completed: false, importance: 3, studyTimeMinutes: 0 }));
+    setEditalSubjects(prev => {
+      const newState = [...prev];
+      newState[sIdx] = { ...newState[sIdx], topics: newTopics };
+      return newState;
+    });
+  };
+
+  const saveEdital = async () => {
+    if (!newEditalName.trim() || !newEditalOrg.trim()) return;
+    
+    const edital: PredefinedEdital = { 
+      id: editingEdital?.id || `catalog-${Date.now()}`, 
+      name: newEditalName, 
+      organization: newEditalOrg, 
+      examDate: newEditalExamDate, 
+      subjects: editalSubjects, 
+      lastUpdated: new Date().toISOString() 
+    };
+
+    // Atualiza localmente
+    if (editingEdital) setEditais(prev => prev.map(e => String(e.id) === String(editingEdital.id) ? edital : e));
+    else setEditais(prev => [...prev, edital]);
+
+    // Persiste no Supabase (Catálogo Mestre)
+    if (supabase) {
+      try {
+        await supabase.from('predefined_editais').upsert([edital]);
+      } catch (err) {
+        console.error("Erro ao persistir catálogo no banco:", err);
+      }
+    }
+
+    setIsCreatingEdital(false);
+  };
+
   if (view === 'users') {
     return (
       <div className="space-y-10 animate-in fade-in duration-700">
@@ -94,7 +143,6 @@ const Admin: React.FC<AdminProps> = ({ users, setUsers, editais, setEditais, vie
           </div>
         </header>
 
-        {/* Dash de Métricas Administrativas */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total de Alunos</p>
@@ -194,50 +242,10 @@ const Admin: React.FC<AdminProps> = ({ users, setUsers, editais, setEditais, vie
               ))}
             </tbody>
           </table>
-          {filteredUsers.length === 0 && (
-            <div className="py-24 text-center">
-               <Users size={64} className="mx-auto text-slate-100 dark:text-slate-800 mb-6" />
-               <p className="text-sm font-black text-slate-300 uppercase tracking-widest">Nenhum aluno encontrado para sua busca</p>
-            </div>
-          )}
         </div>
       </div>
     );
   }
-
-  // --- Lógica de Editais ---
-  // (Mantida e refinada para consistência visual)
-  const addSubjectToEdital = () => {
-    setEditalSubjects(prev => [...prev, { 
-      id: Date.now().toString(), 
-      name: 'Nova Disciplina', 
-      topics: [], 
-      color: colors[prev.length % colors.length] 
-    }]);
-  };
-
-  const removeSubjectFromEdital = (id: string) => {
-    if (!window.confirm("Remover disciplina do catálogo?")) return;
-    setEditalSubjects(prev => prev.filter(s => String(s.id) !== String(id)));
-  };
-
-  const handleTopicsChange = (sIdx: number, text: string) => {
-    const lines = text.split('\n').filter(l => l.trim() !== '');
-    const newTopics = lines.map(line => ({ id: Math.random().toString(36).substr(2, 9), title: line.trim(), completed: false, importance: 3, studyTimeMinutes: 0 }));
-    setEditalSubjects(prev => {
-      const newState = [...prev];
-      newState[sIdx] = { ...newState[sIdx], topics: newTopics };
-      return newState;
-    });
-  };
-
-  const saveEdital = () => {
-    if (!newEditalName.trim() || !newEditalOrg.trim()) return;
-    const edital: PredefinedEdital = { id: editingEdital?.id || Date.now().toString(), name: newEditalName, organization: newEditalOrg, examDate: newEditalExamDate, subjects: editalSubjects, lastUpdated: new Date().toISOString() };
-    if (editingEdital) setEditais(prev => prev.map(e => String(e.id) === String(editingEdital.id) ? edital : e));
-    else setEditais(prev => [...prev, edital]);
-    setIsCreatingEdital(false);
-  };
 
   return (
     <div className="space-y-10 animate-in fade-in duration-500">
@@ -254,7 +262,13 @@ const Admin: React.FC<AdminProps> = ({ users, setUsers, editais, setEditais, vie
           <div key={edital.id} className="bg-white dark:bg-slate-900 p-10 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-sm relative group hover:shadow-2xl transition-all">
             <div className="absolute top-8 right-8 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
               <button onClick={() => { setEditingEdital(edital); setNewEditalName(edital.name); setNewEditalOrg(edital.organization); setEditalSubjects(edital.subjects); setIsCreatingEdital(true); }} className="p-3 bg-indigo-50 text-indigo-500 hover:bg-indigo-500 hover:text-white rounded-xl transition-all" title="Editar"><Edit3 size={18} /></button>
-              <button onClick={() => { if(window.confirm("Excluir do catálogo global?")) setEditais(prev => prev.filter(e => e.id !== edital.id)) }} className="p-3 bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white rounded-xl transition-all" title="Excluir"><Trash2 size={18} /></button>
+              <button onClick={async () => { 
+                if(window.confirm("Excluir do catálogo global?")) {
+                   const n = editais.filter(e => e.id !== edital.id);
+                   setEditais(n);
+                   if (supabase) await supabase.from('predefined_editais').delete().eq('id', edital.id);
+                }
+              }} className="p-3 bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white rounded-xl transition-all" title="Excluir"><Trash2 size={18} /></button>
             </div>
             <div className="w-16 h-16 bg-rose-50 dark:bg-rose-900/20 text-rose-600 rounded-3xl flex items-center justify-center mb-8 shadow-inner"><Database size={32} /></div>
             <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 leading-tight">{edital.name}</h3>
@@ -320,11 +334,6 @@ const Admin: React.FC<AdminProps> = ({ users, setUsers, editais, setEditais, vie
                         </div>
                       </div>
                     ))}
-                    {editalSubjects.length === 0 && (
-                       <div className="py-20 text-center border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-[3rem]">
-                         <p className="text-slate-300 dark:text-slate-700 font-black uppercase tracking-widest">Nenhuma disciplina adicionada ainda</p>
-                       </div>
-                    )}
                   </div>
                </div>
              </div>
