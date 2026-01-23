@@ -24,6 +24,18 @@
     <style>
         body { font-family: 'Inter', sans-serif; }
         * { transition: background-color 0.3s ease, border-color 0.3s ease, color 0.1s ease; }
+        
+        /* Melhorias estéticas globais */
+        .glass {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .dark .glass {
+            background: rgba(15, 23, 42, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(30, 41, 59, 0.5);
+        }
     </style>
 <script type="importmap">
 {
@@ -40,10 +52,8 @@
 }
 </script>
 </head>
-<body class="bg-slate-50 text-slate-900 transition-colors duration-300">
+<body class="bg-slate-50 text-slate-900 transition-colors duration-300 dark:bg-slate-950 dark:text-slate-100">
     <div id="root"></div>
-    
-    <!-- Vite gerencia a transpilação do TSX automaticamente -->
     <script type="module" src="index.tsx"></script>
 </body>
 </html>

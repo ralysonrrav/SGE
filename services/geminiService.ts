@@ -8,7 +8,7 @@ export const generateStudyCycle = async (
   hoursPerDay: number,
   subjects: Subject[]
 ) => {
-  // A inicialização deve ser feita dentro da função para garantir que process.env.API_KEY esteja disponível
+  // Inicializa o cliente com a chave de ambiente
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
   
   const subjectsSummary = subjects.map(s => `${s.name} (${s.topics.length} tópicos)`).join(", ");
@@ -24,6 +24,7 @@ export const generateStudyCycle = async (
     2. Intercalação: Não estude a mesma matéria por mais de 90 minutos seguidos.
     3. Equilíbrio: Distribua as matérias ao longo dos 7 dias da semana.
     4. Foco: Defina se o foco da sessão deve ser Teoria, Questões ou Revisão de Mapas.
+    5. O JSON deve conter uma lista 'schedule' com 'day' e 'sessions'.
   `;
 
   try {
@@ -40,31 +41,20 @@ export const generateStudyCycle = async (
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  day: { 
-                    type: Type.STRING,
-                    description: "Nome do dia da semana"
-                  },
+                  day: { type: Type.STRING },
                   sessions: {
                     type: Type.ARRAY,
                     items: {
                       type: Type.OBJECT,
                       properties: {
                         subjectName: { type: Type.STRING },
-                        duration: { 
-                          type: Type.NUMBER,
-                          description: "Duração em minutos"
-                        },
-                        focus: { 
-                          type: Type.STRING,
-                          description: "Foco da sessão (Teoria, Questões, etc)"
-                        }
+                        duration: { type: Type.NUMBER },
+                        focus: { type: Type.STRING }
                       },
-                      propertyOrdering: ["subjectName", "duration", "focus"],
                       required: ["subjectName", "duration", "focus"]
                     }
                   }
                 },
-                propertyOrdering: ["day", "sessions"],
                 required: ["day", "sessions"]
               }
             }
@@ -76,7 +66,7 @@ export const generateStudyCycle = async (
 
     const text = response.text;
     if (!text) {
-      throw new Error("A IA não retornou conteúdo válido.");
+      throw new Error("A IA não retornou um cronograma válido.");
     }
 
     return JSON.parse(text);
