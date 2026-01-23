@@ -9,7 +9,7 @@ export const generateStudyCycle = async (
   subjects: Subject[]
 ) => {
   // Fixed: Always use the named parameter for apiKey initialization.
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
   
   const subjectsSummary = subjects.map(s => `${s.name} (${s.topics.length} tópicos)`).join(", ");
   
