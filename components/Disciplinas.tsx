@@ -128,7 +128,8 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ subjects, setSubjects, predef
   const toggleTopic = async (subId: string, topicId: string) => {
     const sub = subjects.find(s => String(s.id) === String(subId));
     if (!sub) return;
-    const next = sub.topics.map(t => String(t.id) === String(topicId) ? { ...t, completed: !t.completed, lastStudiedAt: new Date().toISOString() } : t);
+    // Alteração Crítica: Removemos 'lastStudiedAt: new Date().toISOString()' para manter a data registrada pelo usuário
+    const next = sub.topics.map(t => String(t.id) === String(topicId) ? { ...t, completed: !t.completed } : t);
     await handleSubjectUpdate(subId, next);
   };
 
