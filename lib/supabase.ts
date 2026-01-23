@@ -1,15 +1,34 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.https://kubyooesnofaswpfexla.supabase.co || '';
-const supabaseAnonKey = process.env.sb_publishable_YIs9MLAF0rI3i7jDZBlllQ_SVrkY6N6 || '';
+// Valores fornecidos pelo usuário
+const DEFAULT_URL = 'https://kubyooesnofaswpfexla.supabase.co';
+const DEFAULT_KEY = 'sb_publishable_YIs9MLAF0rI3i7jDZBlllQ_SVrkY6N6';
 
-// Exportamos o cliente apenas se as credenciais estiverem presentes.
-// Caso contrário, exportamos null e tratamos defensivamente no App.
-export const supabase = (supabaseUrl && supabaseAnonKey) 
+// Busca das variáveis de ambiente com fallback para os valores fixos
+let supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_URL;
+let supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || DEFAULT_KEY;
+
+/**
+ * Lógica de auto-correção:
+ * Se o usuário inverteu os valores no painel da Vercel (colocou a Key na variável da URL),
+ * nós detectamos e trocamos para garantir que o app não quebre.
+ */
+if (supabaseUrl.startsWith('sb_') && supabaseAnonKey.startsWith('http')) {
+  const temp = supabaseUrl;
+  supabaseUrl = supabaseAnonKey;
+  supabaseAnonKey = temp;
+}
+
+// Validação final antes de criar o cliente
+const isValidUrl = (url: string) => url && url.startsWith('http');
+
+export const supabase = (isValidUrl(supabaseUrl) && supabaseAnonKey) 
   ? createClient(supabaseUrl, supabaseAnonKey) 
   : null;
 
 if (!supabase) {
-  console.error("ERRO DE CONFIGURAÇÃO: As variáveis de ambiente SUPABASE_URL e SUPABASE_ANON_KEY não foram encontradas. A sincronização com o banco de dados está desativada.");
+  console.error("ERRO CRÍTICO: Não foi possível inicializar o Supabase. Verifique as chaves de API.");
+} else {
+  console.log("Supabase inicializado com sucesso.");
 }
