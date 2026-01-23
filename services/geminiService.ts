@@ -8,23 +8,20 @@ export const generateStudyCycle = async (
   hoursPerDay: number,
   subjects: Subject[]
 ) => {
-  // Inicializa o cliente seguindo estritamente as diretrizes da documentação
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const subjectsSummary = subjects.map(s => `${s.name} (${s.topics.length} tópicos)`).join(", ");
   
   const prompt = `
     Aja como um especialista sênior em concursos públicos brasileiros. 
-    Crie um cronograma de estudos estratégico para a banca examinadora "${board}".
-    A data da prova é ${examDate}. O aluno tem ${hoursPerDay} horas líquidas disponíveis por dia.
-    As disciplinas cadastradas são: ${subjectsSummary}.
+    Banca: "${board}". Data da Prova: ${examDate}. Horas/Dia: ${hoursPerDay}h líquidas.
+    Disciplinas: ${subjectsSummary}.
     
-    Diretrizes Pedagógicas:
-    1. Aplique o Teorema de Pareto (80/20): Priorize disciplinas com maior peso histórico para a banca "${board}".
-    2. Intercalação: Não estude a mesma matéria por mais de 90 minutos seguidos.
-    3. Equilíbrio: Distribua as matérias ao longo dos 7 dias da semana.
-    4. Foco: Defina se o foco da sessão deve ser Teoria, Questões ou Revisão de Mapas.
-    5. O JSON deve conter uma lista 'schedule' com 'day' e 'sessions'.
+    Diretrizes de Especialista:
+    1. Pareto: Priorize disciplinas de maior peso para a banca "${board}".
+    2. Intercalação: Sessões de no máximo 90min.
+    3. Equilíbrio: Distribua teoria, questões e revisão de mapas mentais.
+    4. Ciclo Semanal: Planeje de Segunda a Domingo.
   `;
 
   try {
@@ -64,18 +61,9 @@ export const generateStudyCycle = async (
       },
     });
 
-    const text = response.text;
-    if (!text) {
-      throw new Error("A IA não retornou um cronograma válido.");
-    }
-
-    return JSON.parse(text);
+    return JSON.parse(response.text || "{}");
   } catch (error: any) {
-    if (error.name === 'AbortError' || error.message?.includes('aborted')) {
-      console.warn("A requisição do Gemini foi abortada pelo sistema.");
-      return null;
-    }
-    console.error("Erro na integração com Gemini:", error);
-    throw new Error(error.message || "Falha ao processar inteligência do ciclo.");
+    console.error("Erro Gemini Service:", error);
+    throw new Error("Falha na Inteligência de Ciclo.");
   }
 };

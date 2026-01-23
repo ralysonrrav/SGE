@@ -30,7 +30,7 @@ export interface Topic {
   studyTimeMinutes?: number;
   questionsAttempted?: number;
   questionsCorrect?: number;
-  revisionsDone?: number[];
+  revisionsDone?: number[]; // [7, 15, 30]
 }
 
 export interface Subject {
@@ -71,11 +71,4 @@ export interface StudyCycle {
       focus: string;
     }>;
   }>;
-}
-
-export interface ReviewAlert {
-  subjectName: string;
-  topicTitle: string;
-  daysPassed: number;
-  dueDate: string;
 }
