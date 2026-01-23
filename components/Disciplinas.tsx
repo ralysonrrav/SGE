@@ -25,16 +25,22 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
     if (!name.trim()) return;
     setLoading(true);
 
-    // Timeout de segurança: Se o banco não responder em 8s, destrava o botão
-    const safetyTimeout = setTimeout(() => {
-      setLoading(false);
-      console.warn("A requisição ao Supabase excedeu o tempo limite.");
-    }, 8000);
+    // Criamos um ID temporário para atualização imediata da UI (Optimistic UI)
+    const tempId = Date.now().toString();
+    const newSubject: Subject = { 
+      id: tempId, 
+      name: name.trim(), 
+      topics, 
+      color: COLORS[subjects.length % COLORS.length] 
+    };
+
+    // Atualiza a interface NA HORA
+    setSubjects(prev => [...prev, newSubject]);
+    setNewSubjectName('');
 
     try {
       if (supabase) {
-        console.debug("Tentando inserir disciplina para:", user.id);
-        
+        console.debug("Tentando persistir no banco...");
         const { data, error } = await supabase
           .from('subjects')
           .insert([{ 
@@ -46,44 +52,74 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
           .single();
 
         if (error) {
-          console.error("Erro no Supabase durante o cadastro:", error);
+          console.error("Erro Supabase:", error);
+          // Se deu erro no banco, removemos o item temporário da lista para não enganar o usuário
+          setSubjects(prev => prev.filter(s => s.id !== tempId));
           
-          if (error.code === 'PGRST116') {
-             // Caso o single() não retorne nada mas o insert tenha funcionado
-             console.warn("A disciplina foi inserida mas o retorno falhou. Recarregando...");
-             window.location.reload();
-             return;
+          if (error.code === '42703' || error.message.includes('user_id')) {
+            alert("Erro de Configuração: Sua tabela 'subjects' no Supabase precisa da coluna 'user_id'. Execute o comando SQL no editor do Supabase.");
+          } else {
+            alert(`Não foi possível salvar no banco: ${error.message}. Verifique sua chave de API.`);
           }
-
-          alert(`Erro ao cadastrar: ${error.message}. Verifique se a tabela 'subjects' tem a coluna 'user_id' e se RLS está configurada.`);
-          return;
+        } else if (data) {
+          // Substitui o ID temporário pelo ID real do banco
+          setSubjects(prev => prev.map(s => s.id === tempId ? { ...data, id: String(data.id), color: newSubject.color } : s));
         }
-
-        if (data) {
-          setSubjects(prev => [...prev, { 
-            ...data, 
-            id: String(data.id), 
-            color: COLORS[prev.length % COLORS.length] 
-          }]);
-          setNewSubjectName('');
-        }
-      } else {
-        // Fallback Offline
-        setSubjects(prev => [...prev, { 
-          id: Date.now().toString(), 
-          name: name.trim(), 
-          topics, 
-          color: COLORS[prev.length % COLORS.length] 
-        }]);
-        setNewSubjectName('');
       }
-    } catch (err: any) {
-      console.error("Erro inesperado no componente Disciplinas:", err);
-      alert("Houve uma falha inesperada na comunicação com o banco.");
+    } catch (err) {
+      console.error("Erro inesperado:", err);
     } finally {
-      clearTimeout(safetyTimeout);
       setLoading(false);
     }
+  };
+
+  const updateSubjectData = async (subjectId: string, payload: Partial<Subject>) => {
+    const sId = String(subjectId);
+    
+    // UI Otimista: Atualiza localmente primeiro
+    setSubjects(prev => prev.map(s => String(s.id) === sId ? { ...s, ...payload } : s));
+    
+    try {
+      if (supabase) {
+        const { error } = await supabase.from('subjects').update(payload).eq('id', sId);
+        if (error) {
+           console.warn("Erro ao sincronizar tópico com o banco:", error.message);
+           // Não alertamos aqui para não interromper o fluxo do usuário, o erro fica no log.
+        }
+      }
+    } catch (err) {
+      console.error("Falha na rede ao atualizar dados.");
+    }
+  };
+
+  const addTopic = async (subjectId: string) => {
+    if (!newTopicTitle.trim()) return;
+    const subject = subjects.find(s => String(s.id) === String(subjectId));
+    if (!subject) return;
+
+    const newTopic: Topic = { 
+      id: Math.random().toString(36).substr(2, 9), 
+      title: newTopicTitle.trim(), 
+      completed: false, 
+      importance: 3 
+    };
+    
+    const updatedTopics = [...subject.topics, newTopic];
+    await updateSubjectData(subjectId, { topics: updatedTopics });
+    setNewTopicTitle('');
+  };
+
+  const toggleTopic = async (subjectId: string, topicId: string) => {
+    const subject = subjects.find(s => String(s.id) === String(subjectId));
+    if (!subject) return;
+    
+    const updatedTopics = subject.topics.map(t => 
+      String(t.id) === String(topicId) 
+        ? { ...t, completed: !t.completed, lastStudiedAt: !t.completed ? new Date().toISOString() : t.lastStudiedAt } 
+        : t
+    );
+    
+    await updateSubjectData(subjectId, { topics: updatedTopics });
   };
 
   const deleteSubject = async (id: string) => {
@@ -92,33 +128,12 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
     setSubjects(prev => prev.filter(s => String(s.id) !== idToDelete));
     
     if (supabase) {
-      const { error } = await supabase.from('subjects').delete().eq('id', idToDelete);
-      if (error) console.error("Erro ao deletar:", error);
+      try {
+        await supabase.from('subjects').delete().eq('id', idToDelete);
+      } catch (e) {
+        console.error("Erro ao deletar no banco.");
+      }
     }
-  };
-
-  const updateSubjectData = async (subjectId: string, payload: Partial<Subject>) => {
-    const sId = String(subjectId);
-    setSubjects(prev => prev.map(s => String(s.id) === sId ? { ...s, ...payload } : s));
-    if (supabase) {
-      await supabase.from('subjects').update(payload).eq('id', sId);
-    }
-  };
-
-  const addTopic = async (subjectId: string) => {
-    if (!newTopicTitle.trim()) return;
-    const subject = subjects.find(s => String(s.id) === String(subjectId));
-    if (!subject) return;
-    const newTopic = { id: Math.random().toString(36).substr(2, 9), title: newTopicTitle, completed: false, importance: 3 };
-    await updateSubjectData(subjectId, { topics: [...subject.topics, newTopic] });
-    setNewTopicTitle('');
-  };
-
-  const toggleTopic = async (subjectId: string, topicId: string) => {
-    const subject = subjects.find(s => String(s.id) === String(subjectId));
-    if (!subject) return;
-    const updated = subject.topics.map(t => String(t.id) === String(topicId) ? { ...t, completed: !t.completed, lastStudiedAt: !t.completed ? new Date().toISOString() : t.lastStudiedAt } : t);
-    await updateSubjectData(subjectId, { topics: updated });
   };
 
   return (
@@ -135,7 +150,7 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
           <div className="flex">
             <input 
               type="text" 
-              placeholder="Ex: Língua Portuguesa" 
+              placeholder="Ex: Direito Constitucional" 
               className="px-5 py-3 border border-slate-200 dark:border-slate-800 rounded-l-2xl outline-none bg-white dark:bg-slate-900 font-bold dark:text-white w-full" 
               value={newSubjectName} 
               onChange={(e) => setNewSubjectName(e.target.value)} 
@@ -160,20 +175,24 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
           const progress = subject.topics.length > 0 ? (completedCount / subject.topics.length) * 100 : 0;
 
           return (
-            <div key={subject.id} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden transition-all hover:border-indigo-100 dark:hover:border-indigo-900/40">
+            <div key={sIdStr} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden transition-all hover:border-indigo-100 dark:hover:border-indigo-900/40">
               <div className="p-5 flex items-center justify-between cursor-pointer group" onClick={() => setExpandedSubject(isExpanded ? null : sIdStr)}>
                 <div className="flex items-center gap-4 flex-1">
                   <div className="w-1.5 h-10 rounded-full" style={{ backgroundColor: subject.color }} />
                   <div className="flex-1">
                     <h3 className="font-black text-slate-800 dark:text-slate-100">{subject.name}</h3>
                     <div className="flex items-center gap-2 mt-1">
-                      <div className="w-24 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden"><div className="h-full bg-indigo-500 transition-all duration-700" style={{ width: `${progress}%` }} /></div>
+                      <div className="w-24 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                        <div className="h-full bg-indigo-500 transition-all duration-700" style={{ width: `${progress}%` }} />
+                      </div>
                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-tight">{completedCount}/{subject.topics.length} tópicos</span>
                     </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button onClick={(e) => { e.stopPropagation(); deleteSubject(subject.id); }} className="p-2 text-slate-300 hover:text-rose-500 rounded-xl transition-all"><Trash2 size={18} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); deleteSubject(subject.id); }} className="p-2 text-slate-300 hover:text-rose-500 rounded-xl transition-all">
+                    <Trash2 size={18} />
+                  </button>
                   <div className={`p-2 rounded-xl transition-colors ${isExpanded ? 'bg-slate-800 text-white' : 'text-slate-400'}`}>
                     {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                   </div>
@@ -194,12 +213,18 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
                       />
                       <button onClick={() => addTopic(subject.id)} className="bg-slate-800 text-white px-6 rounded-xl font-black text-xs hover:bg-slate-700">Adicionar</button>
                     </div>
-                    {subject.topics.map(topic => (
+                    {subject.topics.length > 0 ? subject.topics.map(topic => (
                       <div key={topic.id} className="flex items-center gap-3 p-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-xl group transition-all">
-                        <button onClick={() => toggleTopic(subject.id, topic.id)} className={`transition-all ${topic.completed ? 'text-emerald-500' : 'text-slate-300 hover:text-slate-400'}`}><CheckCircle size={20} /></button>
-                        <span className={`text-sm font-bold flex-1 ${topic.completed ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-200'}`}>{topic.title}</span>
+                        <button onClick={() => toggleTopic(subject.id, topic.id)} className={`transition-all ${topic.completed ? 'text-emerald-500' : 'text-slate-300 hover:text-slate-400'}`}>
+                          <CheckCircle size={20} />
+                        </button>
+                        <span className={`text-sm font-bold flex-1 ${topic.completed ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-200'}`}>
+                          {topic.title}
+                        </span>
                       </div>
-                    ))}
+                    )) : (
+                      <p className="text-[10px] text-center py-4 font-black uppercase text-slate-400 tracking-widest">Nenhum tópico cadastrado</p>
+                    )}
                   </div>
                 </div>
               )}

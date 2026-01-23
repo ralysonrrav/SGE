@@ -38,7 +38,7 @@ const App: React.FC = () => {
       organization: 'PF / Cebraspe',
       lastUpdated: new Date().toISOString(),
       subjects: [
-        { id: 'pf-1', name: 'Português', color: '#6366f1', topics: [{ id: 't1', title: 'Compreensão de textos', completed: false, importance: 5 }] },
+        { id: 'pf-1', name: 'Língua Portuguesa', color: '#6366f1', topics: [{ id: 't1', title: 'Compreensão de textos', completed: false, importance: 5 }] },
         { id: 'pf-2', name: 'Informática', color: '#10b981', topics: [{ id: 't3', title: 'Segurança da Informação', completed: false, importance: 5 }] }
       ]
     }
@@ -58,7 +58,7 @@ const App: React.FC = () => {
         setSubjects(subData.map((s, index) => ({
           ...s,
           id: String(s.id),
-          topics: s.topics || [],
+          topics: Array.isArray(s.topics) ? s.topics : [],
           color: COLORS[index % COLORS.length]
         })));
       }
@@ -71,7 +71,6 @@ const App: React.FC = () => {
     let isMounted = true;
 
     const init = async () => {
-      // Timeout de segurança: se o banco não responder em 3s, destrava a tela
       const safetyTimeout = setTimeout(() => {
         if (isMounted && !isLoaded) setIsLoaded(true);
       }, 3000);
@@ -105,7 +104,6 @@ const App: React.FC = () => {
 
     init();
 
-    // Listener de autenticação
     const { data: { subscription } } = supabase 
       ? supabase.auth.onAuthStateChange(async (event, session) => {
           if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && session?.user && isMounted) {
@@ -156,12 +154,6 @@ const App: React.FC = () => {
         </div>
         <h2 className="text-white font-black text-xl mb-2">StudyFlow Pro</h2>
         <p className="text-slate-500 text-sm font-bold uppercase tracking-widest animate-pulse">Sincronizando seu progresso...</p>
-        <button 
-          onClick={() => setIsLoaded(true)} 
-          className="mt-8 text-indigo-400 text-[10px] font-black uppercase hover:underline"
-        >
-          Forçar Entrada
-        </button>
       </div>
     );
   }
