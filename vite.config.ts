@@ -6,9 +6,8 @@ export default defineConfig({
   plugins: [react()],
   root: './',
   define: {
-    // Garante que a chave exista como string, mesmo que vazia, evitando erro de referência
     'process.env.API_KEY': JSON.stringify(process.env.API_KEY || ""),
-    'process.env': {}
+    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || "production")
   },
   build: {
     outDir: 'dist',
