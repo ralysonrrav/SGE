@@ -1,36 +1,40 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// Valores fornecidos pelo usuário como fallback
 const DEFAULT_URL = 'https://kubyooesnofaswpfexla.supabase.co';
 const DEFAULT_KEY = 'sb_publishable_YIs9MLAF0rI3i7jDZBlllQ_SVrkY6N6';
 
-let supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_URL;
-let supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || DEFAULT_KEY;
+// Detecção segura de ambiente
+const getEnv = (key: string) => {
+  try {
+    return process.env[key] || process.env[`VITE_${key}`];
+  } catch {
+    return null;
+  }
+};
 
-// Auto-correção para inversão de chaves comum em deploys
-if (supabaseUrl.startsWith('sb_') && supabaseAnonKey.startsWith('http')) {
-  const temp = supabaseUrl;
-  supabaseUrl = supabaseAnonKey;
-  supabaseAnonKey = temp;
-}
+let supabaseUrl = getEnv('SUPABASE_URL') || DEFAULT_URL;
+let supabaseAnonKey = getEnv('SUPABASE_ANON_KEY') || DEFAULT_KEY;
+
+// Fallback se as strings vierem vazias do process.env
+if (!supabaseUrl) supabaseUrl = DEFAULT_URL;
+if (!supabaseAnonKey) supabaseAnonKey = DEFAULT_KEY;
 
 const isValidUrl = (url: string) => url && url.startsWith('http');
 
-export const supabase = (isValidUrl(supabaseUrl) && supabaseAnonKey) 
+export const supabase = isValidUrl(supabaseUrl) 
   ? createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
-        autoRefreshToken: true,
         persistSession: true,
-        detectSessionInUrl: true,
-        flowType: 'pkce'
+        autoRefreshToken: true,
+        detectSessionInUrl: true
+      },
+      global: {
+        headers: { 'x-application-name': 'studyflow' }
       }
     }) 
   : null;
 
-// Log de diagnóstico silencioso para desenvolvedor
 if (!supabase) {
-  console.error("Supabase: Falha na inicialização. Verifique as variáveis de ambiente.");
-} else {
-  console.debug("Supabase: Cliente configurado para", supabaseUrl.substring(0, 15) + "...");
+  console.warn("Supabase: Falha ao inicializar cliente. Verifique URL/Key.");
 }

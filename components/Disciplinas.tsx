@@ -24,9 +24,16 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
   const addSubject = async (name: string, topics: Topic[] = []) => {
     if (!name.trim()) return;
     setLoading(true);
+
+    // Timeout de segurança: Se o banco não responder em 8s, destrava o botão
+    const safetyTimeout = setTimeout(() => {
+      setLoading(false);
+      console.warn("A requisição ao Supabase excedeu o tempo limite.");
+    }, 8000);
+
     try {
       if (supabase) {
-        console.debug("Tentando cadastrar disciplina para usuário:", user.id);
+        console.debug("Tentando inserir disciplina para:", user.id);
         
         const { data, error } = await supabase
           .from('subjects')
@@ -39,12 +46,16 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
           .single();
 
         if (error) {
-          console.error("Erro Supabase:", error);
-          if (error.code === '42703') {
-            alert("Erro de Banco de Dados: A coluna 'user_id' não foi encontrada na tabela 'subjects'. Por favor, execute o script SQL de atualização fornecido.");
-          } else {
-            alert(`Falha ao cadastrar matéria: ${error.message}`);
+          console.error("Erro no Supabase durante o cadastro:", error);
+          
+          if (error.code === 'PGRST116') {
+             // Caso o single() não retorne nada mas o insert tenha funcionado
+             console.warn("A disciplina foi inserida mas o retorno falhou. Recarregando...");
+             window.location.reload();
+             return;
           }
+
+          alert(`Erro ao cadastrar: ${error.message}. Verifique se a tabela 'subjects' tem a coluna 'user_id' e se RLS está configurada.`);
           return;
         }
 
@@ -57,7 +68,7 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
           setNewSubjectName('');
         }
       } else {
-        // Fallback para modo offline se o Supabase estiver quebrado
+        // Fallback Offline
         setSubjects(prev => [...prev, { 
           id: Date.now().toString(), 
           name: name.trim(), 
@@ -67,9 +78,10 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
         setNewSubjectName('');
       }
     } catch (err: any) {
-      console.error("Erro inesperado no cadastro:", err);
-      alert("Ocorreu um erro inesperado. Tente recarregar a página.");
+      console.error("Erro inesperado no componente Disciplinas:", err);
+      alert("Houve uma falha inesperada na comunicação com o banco.");
     } finally {
+      clearTimeout(safetyTimeout);
       setLoading(false);
     }
   };
@@ -80,7 +92,8 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
     setSubjects(prev => prev.filter(s => String(s.id) !== idToDelete));
     
     if (supabase) {
-      await supabase.from('subjects').delete().eq('id', idToDelete);
+      const { error } = await supabase.from('subjects').delete().eq('id', idToDelete);
+      if (error) console.error("Erro ao deletar:", error);
     }
   };
 
@@ -112,17 +125,17 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
     <div className="space-y-6 pb-24 animate-in fade-in duration-500">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight">Grade de Estudos</h2>
-          <p className="text-slate-500 font-medium dark:text-slate-400">Monte seu edital verticalizado.</p>
+          <h2 className="text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight">Disciplinas</h2>
+          <p className="text-slate-500 font-medium dark:text-slate-400">Gerencie seu conteúdo programático.</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setIsCatalogOpen(true)} className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-5 py-3 rounded-2xl font-bold hover:bg-slate-200 transition-all">
-            <Layers size={20} /> <span className="hidden md:inline">Editais Prontos</span>
+            <Layers size={20} /> <span className="hidden md:inline">Catálogo</span>
           </button>
           <div className="flex">
             <input 
               type="text" 
-              placeholder="Ex: Direito Penal" 
+              placeholder="Ex: Língua Portuguesa" 
               className="px-5 py-3 border border-slate-200 dark:border-slate-800 rounded-l-2xl outline-none bg-white dark:bg-slate-900 font-bold dark:text-white w-full" 
               value={newSubjectName} 
               onChange={(e) => setNewSubjectName(e.target.value)} 
@@ -131,7 +144,7 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
             <button 
               onClick={() => addSubject(newSubjectName)} 
               disabled={loading || !newSubjectName.trim()} 
-              className="bg-indigo-600 text-white px-5 rounded-r-2xl hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+              className="bg-indigo-600 text-white px-5 rounded-r-2xl hover:bg-indigo-700 disabled:opacity-50 transition-colors flex items-center justify-center min-w-[60px]"
             >
               {loading ? <Loader2 className="animate-spin" size={20} /> : <Plus size={20} />}
             </button>
