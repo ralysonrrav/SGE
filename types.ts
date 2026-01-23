@@ -25,6 +25,7 @@ export interface Topic {
   title: string;
   completed: boolean;
   lastStudiedAt?: string;
+  concludedAt?: string;
   importance: number;
   studyTimeMinutes?: number;
   questionsAttempted?: number;

@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { Subject, Topic } from '../types';
+import { supabase } from '../lib/supabase';
 import { 
   RefreshCcw, 
   Bell, 
@@ -14,7 +15,11 @@ import {
   AlertCircle,
   History,
   X,
-  CheckCircle2
+  CheckCircle2,
+  Zap,
+  TrendingUp,
+  BarChart3,
+  Save
 } from 'lucide-react';
 
 interface RevisaoProps {
@@ -24,26 +29,31 @@ interface RevisaoProps {
 }
 
 const Revisao: React.FC<RevisaoProps> = ({ subjects, setSubjects, onAddLog }) => {
-  const [editingTopicId, setEditingTopicId] = useState<string | null>(null);
-  
-  // Stats editing state
-  const [editMinutes, setEditMinutes] = useState(0);
-  const [editAttempted, setEditAttempted] = useState(0);
-  const [editCorrect, setEditCorrect] = useState(0);
+  const [activeReviewTopic, setActiveReviewTopic] = useState<string | null>(null);
   const [selectedMilestone, setSelectedMilestone] = useState<number | null>(null);
+  
+  const [progDate, setProgDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [progHours, setProgHours] = useState<number>(0);
+  const [progMinutes, setProgMinutes] = useState<number>(0);
+  const [progAttempted, setProgAttempted] = useState<number>(0);
+  const [progCorrect, setProgCorrect] = useState<number>(0);
 
   const getAllCompletedTopics = () => {
     const list: { subject: Subject; topic: Topic }[] = [];
     subjects.forEach(s => {
       s.topics.forEach(t => {
-        if (t.completed && t.lastStudiedAt) {
+        // Agora usamos concludedAt como garantia da âncora de revisão
+        if (t.completed && (t.concludedAt || t.lastStudiedAt)) {
           list.push({ subject: s, topic: t });
         }
       });
     });
-    return list.sort((a, b) => 
-      new Date(b.topic.lastStudiedAt!).getTime() - new Date(a.topic.lastStudiedAt!).getTime()
-    );
+    
+    return list.sort((a, b) => {
+      const dateA = new Date(a.topic.concludedAt || a.topic.lastStudiedAt!).getTime();
+      const dateB = new Date(b.topic.concludedAt || b.topic.lastStudiedAt!).getTime();
+      return dateB - dateA;
+    });
   };
 
   const calculateMilestoneDate = (baseDate: string, days: number) => {
@@ -68,26 +78,22 @@ const Revisao: React.FC<RevisaoProps> = ({ subjects, setSubjects, onAddLog }) =>
     return { label: `Em ${diffDays}d`, color: 'text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800/50', icon: <Calendar size={12} /> };
   };
 
-  const startEditing = (topic: Topic) => {
-    setEditingTopicId(topic.id);
-    setEditMinutes(0);
-    setEditAttempted(0);
-    setEditCorrect(0);
-    
-    const done = topic.revisionsDone || [];
-    if (!done.includes(7)) setSelectedMilestone(7);
-    else if (!done.includes(15)) setSelectedMilestone(15);
-    else if (!done.includes(30)) setSelectedMilestone(30);
-    else setSelectedMilestone(null);
+  const openReviewForm = (topic: Topic, milestone: number) => {
+    setActiveReviewTopic(topic.id);
+    setSelectedMilestone(milestone);
+    setProgDate(new Date().toISOString().split('T')[0]);
+    setProgHours(0);
+    setProgMinutes(0);
+    setProgAttempted(0);
+    setProgCorrect(0);
   };
 
-  const saveStats = (subjectId: string, topicId: string) => {
-    if (!selectedMilestone) {
-        alert("Selecione qual marco de revisão (7, 15 ou 30 dias) você está concluindo.");
-        return;
-    }
+  const saveReviewProgress = async (subjectId: string, topicId: string) => {
+    if (!selectedMilestone) return;
 
-    setSubjects(prev => prev.map(s => {
+    const totalMinutes = (progHours * 60) + progMinutes;
+
+    const updatedSubjects = subjects.map(s => {
       if (s.id === subjectId) {
         return {
           ...s,
@@ -98,13 +104,11 @@ const Revisao: React.FC<RevisaoProps> = ({ subjects, setSubjects, onAddLog }) =>
                 ? currentRevisions 
                 : [...currentRevisions, selectedMilestone];
 
-              if (editMinutes > 0) onAddLog(editMinutes, topicId, subjectId);
-
               return { 
                 ...t, 
-                studyTimeMinutes: (t.studyTimeMinutes || 0) + editMinutes,
-                questionsAttempted: (t.questionsAttempted || 0) + editAttempted,
-                questionsCorrect: (t.questionsCorrect || 0) + editCorrect,
+                studyTimeMinutes: (t.studyTimeMinutes || 0) + totalMinutes,
+                questionsAttempted: (t.questionsAttempted || 0) + progAttempted,
+                questionsCorrect: (t.questionsCorrect || 0) + progCorrect,
                 revisionsDone: newRevisions
               };
             }
@@ -113,80 +117,125 @@ const Revisao: React.FC<RevisaoProps> = ({ subjects, setSubjects, onAddLog }) =>
         };
       }
       return s;
-    }));
-    setEditingTopicId(null);
+    });
+
+    setSubjects(updatedSubjects);
+
+    if (supabase) {
+      try {
+        const subject = updatedSubjects.find(s => s.id === subjectId);
+        if (subject) {
+          await supabase.from('subjects').update({ topics: subject.topics }).eq('id', subjectId);
+        }
+      } catch (err) {
+        console.error("Erro ao sincronizar revisão:", err);
+      }
+    }
+
+    if (totalMinutes > 0) onAddLog(totalMinutes, topicId, subjectId);
+    
+    setActiveReviewTopic(null);
     setSelectedMilestone(null);
   };
 
-  const calculateHitRate = (attempted: number, correct: number) => {
-    if (attempted === 0) return 0;
-    return Math.round((correct / attempted) * 100);
+  const getPerformanceColor = (perc: number) => {
+    if (perc >= 85) return 'text-indigo-500 bg-indigo-50 dark:bg-indigo-900/20';
+    if (perc >= 70) return 'text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20';
+    if (perc >= 50) return 'text-amber-500 bg-amber-50 dark:bg-amber-900/20';
+    return 'text-rose-500 bg-rose-50 dark:bg-rose-900/20';
   };
 
   const completedTopics = getAllCompletedTopics();
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 pb-20">
+    <div className="space-y-10 animate-in fade-in duration-700 pb-24">
       <header>
-        <h2 className="text-3xl font-bold text-slate-900 dark:text-slate-100 tracking-tight transition-colors">Painel de Revisões</h2>
-        <p className="text-slate-500 dark:text-slate-400 font-medium transition-colors">Ciclo fixo de 7, 15 e 30 dias. Realize revisões sem alterar seu cronograma base.</p>
+        <h2 className="text-4xl font-black text-slate-900 dark:text-slate-100 tracking-tight transition-colors">Painel de Revisões</h2>
+        <p className="text-slate-500 dark:text-slate-400 font-medium transition-colors">Marcos automáticos de 7, 15 e 30 dias baseados na sua data de conclusão original.</p>
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-4">
+        <div className="lg:col-span-2 space-y-6">
           {completedTopics.length > 0 ? (
             completedTopics.map(({ subject, topic }) => {
               const done = topic.revisionsDone || [];
-              const m7 = calculateMilestoneDate(topic.lastStudiedAt!, 7);
-              const m15 = calculateMilestoneDate(topic.lastStudiedAt!, 15);
-              const m30 = calculateMilestoneDate(topic.lastStudiedAt!, 30);
+              // Usamos concludedAt como âncora imutável
+              const anchorDate = topic.concludedAt || topic.lastStudiedAt!;
+              const m7 = calculateMilestoneDate(anchorDate, 7);
+              const m15 = calculateMilestoneDate(anchorDate, 15);
+              const m30 = calculateMilestoneDate(anchorDate, 30);
               
               const s7 = getStatusInfo(m7, done.includes(7));
               const s15 = getStatusInfo(m15, done.includes(15));
               const s30 = getStatusInfo(m30, done.includes(30));
 
-              const currentHitRate = editAttempted > 0 ? calculateHitRate(editAttempted, editCorrect) : 0;
+              const isEditing = activeReviewTopic === topic.id;
+              const hitRate = topic.questionsAttempted && topic.questionsAttempted > 0 
+                ? Math.round((topic.questionsCorrect! / topic.questionsAttempted) * 100) 
+                : 0;
 
               return (
-                <div key={topic.id} className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden hover:shadow-md transition-all">
-                  <div className="p-6">
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-                      <div className="flex items-center gap-4">
-                        <div className="w-2 h-10 rounded-full" style={{ backgroundColor: subject.color }} />
+                <div key={topic.id} className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden hover:border-indigo-100 transition-all group">
+                  <div className="p-8">
+                    <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-8">
+                      <div className="flex items-start gap-5">
+                        <div className="w-1.5 h-12 rounded-full mt-1" style={{ backgroundColor: subject.color }} />
                         <div>
-                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-0.5">{subject.name}</p>
-                          <h3 className="font-bold text-slate-800 dark:text-slate-100 text-lg leading-tight transition-colors">{topic.title}</h3>
-                          <p className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 mt-1 transition-colors">
-                            <History size={12} /> Conclusão Original: {new Date(topic.lastStudiedAt!).toLocaleDateString('pt-BR')}
-                          </p>
+                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500 mb-1">{subject.name}</p>
+                          <h3 className="font-black text-slate-800 dark:text-slate-100 text-xl leading-tight transition-colors">{topic.title}</h3>
+                          <div className="flex items-center gap-4 mt-2">
+                            <p className="text-[10px] font-black text-slate-300 uppercase flex items-center gap-1.5 transition-colors">
+                              <History size={12} /> Concluído em: {new Date(anchorDate).toLocaleDateString('pt-BR')}
+                            </p>
+                            {hitRate > 0 && (
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tighter shadow-sm ${getPerformanceColor(hitRate)}`}>
+                                {hitRate}% Aproveitamento Total
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                       
-                      <button 
-                        onClick={() => editingTopicId === topic.id ? setEditingTopicId(null) : startEditing(topic)}
-                        className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 shadow-sm
-                          ${editingTopicId === topic.id ? 'bg-slate-800 dark:bg-slate-700 text-white' : 'bg-indigo-600 dark:bg-indigo-500 text-white hover:bg-indigo-700 dark:hover:bg-indigo-400 shadow-indigo-100 dark:shadow-none'}
-                        `}
-                      >
-                        {editingTopicId === topic.id ? <X size={18} /> : <CheckCircle size={18} />}
-                        {editingTopicId === topic.id ? 'Cancelar' : 'Concluir Revisão'}
-                      </button>
+                      {!isEditing && (
+                        <div className="flex gap-2">
+                           <button 
+                            onClick={() => {
+                              const next = !done.includes(7) ? 7 : !done.includes(15) ? 15 : 30;
+                              openReviewForm(topic, next);
+                            }}
+                            className="bg-indigo-600 dark:bg-indigo-500 text-white px-6 py-3 rounded-2xl font-black text-xs hover:bg-indigo-700 transition-all flex items-center gap-2 shadow-lg shadow-indigo-100 dark:shadow-none"
+                           >
+                             <CheckCircle size={16} /> REVISAR AGORA
+                           </button>
+                        </div>
+                      )}
                     </div>
 
-                    {/* Milestones Timeline */}
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-3 gap-4">
                       {[ 
                         { val: 7, label: '7 Dias', date: m7, status: s7 },
                         { val: 15, label: '15 Dias', date: m15, status: s15 },
                         { val: 30, label: '30 Dias', date: m30, status: s30 }
                       ].map((m, i) => (
-                        <div key={i} className={`flex flex-col p-3 rounded-2xl border transition-all ${done.includes(m.val) ? 'bg-emerald-50/30 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-900/20' : 'bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-800'}`}>
-                          <div className="flex justify-between items-start mb-1">
-                             <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase transition-colors">{m.label}</span>
-                             {done.includes(m.val) && <CheckCircle2 size={12} className="text-emerald-500 dark:text-emerald-400" />}
+                        <div 
+                          key={i} 
+                          onClick={() => !done.includes(m.val) && openReviewForm(topic, m.val)}
+                          className={`flex flex-col p-4 rounded-3xl border cursor-pointer transition-all group/milestone ${
+                            done.includes(m.val) 
+                              ? 'bg-emerald-50/30 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-900/20' 
+                              : 'bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-800 hover:border-indigo-200'
+                          }`}
+                        >
+                          <div className="flex justify-between items-center mb-1">
+                             <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">{m.label}</span>
+                             {done.includes(m.val) ? (
+                               <CheckCircle2 size={14} className="text-emerald-500" />
+                             ) : (
+                               <Zap size={14} className="text-slate-200 group-hover/milestone:text-indigo-400 transition-colors" />
+                             )}
                           </div>
-                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300 transition-colors">{m.date.toLocaleDateString('pt-BR')}</span>
-                          <div className={`mt-2 flex items-center justify-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase transition-colors ${m.status.color}`}>
+                          <span className="text-xs font-black text-slate-700 dark:text-slate-300">{m.date.toLocaleDateString('pt-BR')}</span>
+                          <div className={`mt-3 flex items-center justify-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black uppercase transition-colors ${m.status.color}`}>
                             {m.status.icon}
                             {m.status.label}
                           </div>
@@ -194,84 +243,42 @@ const Revisao: React.FC<RevisaoProps> = ({ subjects, setSubjects, onAddLog }) =>
                       ))}
                     </div>
 
-                    {/* Integrated Editing Panel */}
-                    {editingTopicId === topic.id && (
-                      <div className="mt-6 p-5 bg-indigo-50/50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-900/30 rounded-2xl animate-in slide-in-from-top-4 duration-300">
-                        <div className="mb-4">
-                           <label className="block text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase mb-2 transition-colors">Qual marco está concluindo?</label>
-                           <div className="flex gap-2">
-                             {[7, 15, 30].map(m => (
-                               <button
-                                 key={m}
-                                 onClick={() => setSelectedMilestone(m)}
-                                 className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all ${selectedMilestone === m ? 'bg-indigo-600 dark:bg-indigo-500 border-indigo-600 dark:border-indigo-500 text-white' : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:border-indigo-300 transition-all'}`}
-                               >
-                                 {m} Dias
-                               </button>
-                             ))}
-                           </div>
+                    {isEditing && (
+                      <div className="mt-8 p-6 bg-indigo-50/50 dark:bg-indigo-900/10 rounded-[2rem] border border-indigo-100 dark:border-indigo-900/20 animate-in slide-in-from-top-4 duration-300 shadow-inner">
+                        <div className="flex items-center justify-between mb-6">
+                          <h5 className="text-[11px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                            <TrendingUp size={14} /> REGISTRAR REVISÃO DE {selectedMilestone} DIAS
+                          </h5>
+                          <button onClick={() => setActiveReviewTopic(null)} className="p-1 text-slate-400 hover:text-rose-500 transition-colors"><X size={18} /></button>
                         </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <div>
-                            <label className="block text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase mb-1 flex items-center gap-1 transition-colors">
-                              <Clock size={10} /> Tempo Gasto (Min)
-                            </label>
-                            <input 
-                              type="number" 
-                              className="w-full px-3 py-2 border-2 border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-950 text-slate-900 dark:text-white transition-colors"
-                              value={editMinutes}
-                              onChange={(e) => setEditMinutes(parseInt(e.target.value) || 0)}
-                            />
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                          <div className="space-y-1.5">
+                            <label className="text-[9px] font-black text-slate-400 uppercase ml-1 flex items-center gap-1"><Calendar size={10} /> Data</label>
+                            <input type="date" className="w-full px-4 py-3 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 outline-none focus:ring-2 focus:ring-indigo-500 transition-all" value={progDate} onChange={(e) => setProgDate(e.target.value)} />
                           </div>
-                          <div>
-                            <label className="block text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase mb-1 flex items-center gap-1 transition-colors">
-                              <Target size={10} /> Questões Feitas
-                            </label>
-                            <input 
-                              type="number" 
-                              className="w-full px-3 py-2 border-2 border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-950 text-slate-900 dark:text-white transition-colors"
-                              value={editAttempted}
-                              onChange={(e) => setEditAttempted(parseInt(e.target.value) || 0)}
-                            />
+                          <div className="space-y-1.5">
+                            <label className="text-[9px] font-black text-slate-400 uppercase ml-1 flex items-center gap-1"><Clock size={10} /> Tempo Gasto</label>
+                            <div className="flex gap-1 items-center">
+                              <input type="number" placeholder="Hr" className="w-1/2 px-4 py-3 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 outline-none focus:ring-2 focus:ring-indigo-500 transition-all" value={progHours || ''} onChange={(e) => setProgHours(parseFloat(e.target.value) || 0)} />
+                              <span className="text-slate-300">:</span>
+                              <input type="number" placeholder="Min" className="w-1/2 px-4 py-3 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 outline-none focus:ring-2 focus:ring-indigo-500 transition-all" value={progMinutes || ''} onChange={(e) => setProgMinutes(parseInt(e.target.value) || 0)} />
+                            </div>
                           </div>
-                          <div>
-                            <label className="block text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase mb-1 flex items-center gap-1 transition-colors">
-                              <Check size={10} /> Acertos
-                            </label>
-                            <input 
-                              type="number" 
-                              className="w-full px-3 py-2 border-2 border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-950 text-slate-900 dark:text-white transition-colors"
-                              value={editCorrect}
-                              onChange={(e) => setEditCorrect(parseInt(e.target.value) || 0)}
-                            />
+                          <div className="space-y-1.5">
+                            <label className="text-[9px] font-black text-slate-400 uppercase ml-1 flex items-center gap-1"><Target size={10} /> Questões</label>
+                            <input type="number" className="w-full px-4 py-3 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 outline-none focus:ring-2 focus:ring-indigo-500 transition-all" value={progAttempted || ''} onChange={(e) => setProgAttempted(parseInt(e.target.value) || 0)} />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-[9px] font-black text-slate-400 uppercase ml-1 flex items-center gap-1"><BarChart3 size={10} /> Acertos</label>
+                            <input type="number" className="w-full px-4 py-3 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 outline-none focus:ring-2 focus:ring-indigo-500 transition-all" value={progCorrect || ''} onChange={(e) => setProgCorrect(parseInt(e.target.value) || 0)} />
                           </div>
                         </div>
-
-                        {editAttempted > 0 && (
-                          <div className="mt-4 flex items-center gap-2">
-                             <div className="flex-1 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden transition-colors">
-                                <div 
-                                  className={`h-full transition-all duration-500 ${currentHitRate >= 80 ? 'bg-emerald-500' : currentHitRate >= 60 ? 'bg-amber-500' : 'bg-rose-500'}`}
-                                  style={{ width: `${currentHitRate}%` }}
-                                />
-                             </div>
-                             <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 transition-colors">{currentHitRate}% APROVEITAMENTO</span>
-                          </div>
-                        )}
-
-                        <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-indigo-100 dark:border-indigo-900/30 transition-colors">
-                          <button 
-                            onClick={() => setEditingTopicId(null)}
-                            className="px-4 py-2 text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition-all"
-                          >
-                            Descartar
-                          </button>
-                          <button 
-                            onClick={() => saveStats(subject.id, topic.id)}
-                            className="px-6 py-2 text-xs font-bold bg-indigo-600 dark:bg-indigo-500 text-white rounded-lg hover:bg-indigo-700 dark:hover:bg-indigo-400 shadow-md dark:shadow-none transition-all flex items-center gap-2"
-                          >
-                            <CheckCircle size={14} /> Salvar e Finalizar Marco
+                        
+                        <div className="mt-8 flex justify-end gap-3">
+                          <button onClick={() => setActiveReviewTopic(null)} className="px-6 py-3 text-[10px] font-black text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 rounded-2xl transition-all">CANCELAR</button>
+                          <button onClick={() => saveReviewProgress(subject.id, topic.id)} className="px-8 py-3 bg-indigo-600 text-white text-[10px] font-black rounded-2xl shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2">
+                            <Save size={16} /> CONCLUIR REVISÃO
                           </button>
                         </div>
                       </div>
@@ -281,47 +288,46 @@ const Revisao: React.FC<RevisaoProps> = ({ subjects, setSubjects, onAddLog }) =>
               );
             })
           ) : (
-            <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-dashed border-slate-300 dark:border-slate-800 p-20 text-center transition-colors">
-              <div className="w-20 h-20 bg-slate-50 dark:bg-slate-800 rounded-3xl flex items-center justify-center mx-auto mb-6 text-slate-200 dark:text-slate-700 transition-colors">
-                <RefreshCcw size={40} />
+            <div className="bg-white dark:bg-slate-900 rounded-[3rem] border border-dashed border-slate-300 dark:border-slate-800 p-24 text-center transition-colors">
+              <div className="w-24 h-24 bg-slate-50 dark:bg-slate-800 rounded-[2rem] flex items-center justify-center mx-auto mb-8 text-slate-200 dark:text-slate-700 transition-colors">
+                <RefreshCcw size={48} />
               </div>
-              <h3 className="text-xl font-bold text-slate-800 dark:text-slate-200 transition-colors">Nada para revisar ainda</h3>
-              <p className="text-slate-500 dark:text-slate-400 mt-2 max-w-sm mx-auto font-medium transition-colors">Os ciclos de 7, 15 e 30 dias aparecerão aqui assim que você concluir tópicos no edital.</p>
+              <h3 className="text-2xl font-black text-slate-800 dark:text-slate-200 transition-colors">Nenhum tópico concluído</h3>
+              <p className="text-slate-500 dark:text-slate-400 mt-4 max-w-sm mx-auto font-medium leading-relaxed transition-colors">Assim que você marcar tópicos como concluídos no edital, os ciclos de revisão (7, 15 e 30 dias) aparecerão aqui automaticamente.</p>
             </div>
           )}
         </div>
 
-        {/* Sidebar Info */}
         <div className="space-y-6">
-          <div className="bg-slate-900 dark:bg-slate-800 text-white p-8 rounded-[2rem] shadow-xl relative overflow-hidden group transition-colors">
-            <div className="absolute -right-4 -top-4 w-24 h-24 bg-indigo-500/20 rounded-full blur-2xl transition-all" />
-            <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-              <Activity size={20} className="text-indigo-400 dark:text-indigo-300" /> Ciclo Inalterável
+          <div className="bg-slate-900 dark:bg-indigo-950 text-white p-10 rounded-[2.5rem] shadow-2xl relative overflow-hidden group transition-colors">
+            <div className="absolute -right-6 -top-6 w-32 h-32 bg-indigo-500/20 rounded-full blur-3xl transition-all" />
+            <h3 className="text-2xl font-black mb-4 flex items-center gap-3">
+              <Activity size={24} className="text-indigo-400" /> Curva de Esquecimento
             </h3>
-            <p className="text-slate-400 dark:text-slate-300 text-sm leading-relaxed mb-6 font-medium transition-colors">
-              Diferente de outros apps, aqui sua revisão concluída não "empurra" a próxima. Os marcos de 7, 15 e 30 dias são calculados a partir da sua primeira vitória no tópico.
+            <p className="text-slate-300 text-sm leading-relaxed mb-8 font-medium transition-colors">
+              Nosso sistema utiliza marcos fixos baseados na data de conclusão original. Isso garante que você lute contra o esquecimento nos momentos críticos (1 semana, 2 semanas e 1 mês).
             </p>
-            <div className="flex items-center gap-2 text-xs font-black bg-white/5 p-3 rounded-xl border border-white/10 uppercase tracking-tighter transition-colors">
-              <ArrowRight size={14} className="text-indigo-400" /> Foco na Curva de Esquecimento Real
+            <div className="flex items-center gap-3 text-[10px] font-black bg-white/5 p-4 rounded-2xl border border-white/10 uppercase tracking-widest transition-colors">
+              <ArrowRight size={16} className="text-indigo-400" /> Revisões não são adiáveis
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm transition-colors">
-            <h4 className="font-bold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2 transition-colors">
-              <History size={18} className="text-indigo-500 dark:text-indigo-400" /> Legenda de Status
+          <div className="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-sm transition-colors">
+            <h4 className="font-black text-slate-800 dark:text-slate-100 mb-6 flex items-center gap-2 transition-colors uppercase text-xs tracking-widest">
+              <History size={18} className="text-indigo-500" /> Legenda de Status
             </h4>
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase transition-colors">Concluída (Missão Cumprida)</div>
+            <div className="space-y-4">
+              <div className="flex items-center gap-4 p-3 bg-emerald-50/50 dark:bg-emerald-900/10 rounded-2xl">
+                <div className="w-3 h-3 rounded-full bg-emerald-500" />
+                <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-widest">Concluída</span>
               </div>
-              <div className="flex items-center gap-3">
-                <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase transition-colors">Vence Hoje (Prioridade)</div>
+              <div className="flex items-center gap-4 p-3 bg-amber-50/50 dark:bg-amber-900/10 rounded-2xl">
+                <div className="w-3 h-3 rounded-full bg-amber-500 animate-pulse" />
+                <span className="text-[10px] font-black text-amber-700 dark:text-amber-400 uppercase tracking-widest">Vence Hoje</span>
               </div>
-              <div className="flex items-center gap-3">
-                <div className="w-2 h-2 rounded-full bg-rose-500" />
-                <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase transition-colors">Atrasada (Atenção!)</div>
+              <div className="flex items-center gap-4 p-3 bg-rose-50/50 dark:bg-rose-900/10 rounded-2xl">
+                <div className="w-3 h-3 rounded-full bg-rose-500" />
+                <span className="text-[10px] font-black text-rose-700 dark:text-rose-400 uppercase tracking-widest">Atrasada</span>
               </div>
             </div>
           </div>
