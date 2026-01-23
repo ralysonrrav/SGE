@@ -59,52 +59,56 @@ const App: React.FC = () => {
 
   const fetchUserData = useCallback(async () => {
     if (!supabase) return;
-    
-    // 1. Busca Disciplinas
-    const { data: subData } = await supabase
-      .from('subjects')
-      .select('*')
-      .order('created_at', { ascending: true });
-    
-    if (subData) {
-      setSubjects(subData.map((s, index) => ({
-        ...s,
-        id: String(s.id),
-        topics: s.topics || [],
-        color: colors[index % colors.length]
-      })));
-    }
+    try {
+      const { data: subData } = await supabase
+        .from('subjects')
+        .select('*')
+        .order('created_at', { ascending: true });
+      
+      if (subData) {
+        setSubjects(subData.map((s, index) => ({
+          ...s,
+          id: String(s.id),
+          topics: s.topics || [],
+          color: colors[index % colors.length]
+        })));
+      }
 
-    // 2. Busca Simulados (Mocks)
-    const { data: mockData } = await supabase
-      .from('mocks')
-      .select('*')
-      .order('date', { ascending: false });
+      const { data: mockData } = await supabase
+        .from('mocks')
+        .select('*')
+        .order('date', { ascending: false });
 
-    if (mockData) {
-      setMocks(mockData.map(m => ({
-        ...m,
-        id: String(m.id),
-        // Mapeia snake_case do banco para camelCase da interface
-        totalQuestions: m.total_questions || m.totalQuestions || 100,
-        subjectPerformance: m.subject_performance || {}
-      })));
+      if (mockData) {
+        setMocks(mockData.map(m => ({
+          ...m,
+          id: String(m.id),
+          totalQuestions: m.total_questions || m.totalQuestions || 100,
+          subjectPerformance: m.subject_performance || {}
+        })));
+      }
+    } catch (e) {
+      console.error("Erro ao buscar dados do usuário:", e);
     }
   }, [colors]);
 
   const fetchAllUsers = useCallback(async () => {
     if (!supabase) return;
-    const { data: profiles } = await supabase.from('profiles').select('*');
-    if (profiles) {
-      setAllUsers(profiles.map(p => ({
-        id: String(p.id),
-        name: p.name || 'Sem nome',
-        email: p.email || 'N/A',
-        role: p.role || 'student',
-        status: p.status || 'active',
-        isOnline: false,
-        weeklyGoal: p.weekly_goal || 20
-      })));
+    try {
+      const { data: profiles } = await supabase.from('profiles').select('*');
+      if (profiles) {
+        setAllUsers(profiles.map(p => ({
+          id: String(p.id),
+          name: p.name || 'Sem nome',
+          email: p.email || 'N/A',
+          role: (p.role === 'admin' ? 'administrator' : p.role) || 'student',
+          status: p.status || 'active',
+          isOnline: false,
+          weeklyGoal: p.weekly_goal || 20
+        })));
+      }
+    } catch (e) {
+      console.error("Erro ao buscar usuários:", e);
     }
   }, []);
 
@@ -116,58 +120,81 @@ const App: React.FC = () => {
   }, [isDarkMode]);
 
   useEffect(() => {
+    let isMounted = true;
+    let authSubscription: any = null;
+
     const initializeAuth = async () => {
       if (!supabase) {
-        setIsLoaded(true);
+        if (isMounted) setIsLoaded(true);
         return;
       }
 
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        const isAdmin = session.user.email === 'ralysonriccelli@gmail.com';
-        setUser({
-          id: session.user.id,
-          name: session.user.user_metadata?.full_name || 'Usuário',
-          email: session.user.email!,
-          role: isAdmin ? 'admin' : 'student',
-          status: 'active',
-          isOnline: true,
-          weeklyGoal: 20
-        });
-        fetchUserData();
-        if (isAdmin) fetchAllUsers();
-      }
-
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-        if (session?.user) {
+      // Check initial session
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (isMounted && session?.user) {
           const isAdmin = session.user.email === 'ralysonriccelli@gmail.com';
           setUser({
             id: session.user.id,
             name: session.user.user_metadata?.full_name || 'Usuário',
             email: session.user.email!,
-            role: isAdmin ? 'admin' : 'student',
+            role: isAdmin ? 'administrator' : 'student',
             status: 'active',
             isOnline: true,
             weeklyGoal: 20
           });
           fetchUserData();
           if (isAdmin) fetchAllUsers();
-        } else {
+        }
+      } catch (err) {
+        console.error("Erro na inicialização da sessão:", err);
+      } finally {
+        if (isMounted) setIsLoaded(true);
+      }
+
+      // Setup listener
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (!isMounted) return;
+        
+        if (session?.user) {
+          const isAdmin = session.user.email === 'ralysonriccelli@gmail.com';
+          setUser({
+            id: session.user.id,
+            name: session.user.user_metadata?.full_name || 'Usuário',
+            email: session.user.email!,
+            role: isAdmin ? 'administrator' : 'student',
+            status: 'active',
+            isOnline: true,
+            weeklyGoal: 20
+          });
+          fetchUserData();
+          if (isAdmin) fetchAllUsers();
+        } else if (event === 'SIGNED_OUT') {
           setUser(null);
           setSubjects([]);
           setMocks([]);
         }
-        setIsLoaded(true);
       });
-
-      return () => subscription.unsubscribe();
+      
+      authSubscription = subscription;
     };
 
     initializeAuth();
+
+    return () => {
+      isMounted = false;
+      if (authSubscription) authSubscription.unsubscribe();
+    };
   }, [fetchUserData, fetchAllUsers]);
 
   const handleLogout = async () => {
-    if (supabase) await supabase.auth.signOut();
+    if (supabase) {
+      try {
+        await supabase.auth.signOut();
+      } catch (e) {
+        console.error("Erro ao sair:", e);
+      }
+    }
     setUser(null);
     setSubjects([]);
     setMocks([]);
@@ -246,7 +273,7 @@ const App: React.FC = () => {
               </button>
             ))}
 
-            {user.role === 'admin' && (
+            {user.role === 'administrator' && (
               <>
                 <p className="px-4 text-[10px] font-black text-rose-500 uppercase tracking-widest mb-2 mt-8">Administração</p>
                 <button onClick={() => { setCurrentPage('admin_users'); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-bold transition-all ${currentPage === 'admin_users' ? 'bg-rose-600 text-white shadow-lg' : 'text-slate-500 dark:text-slate-400 hover:bg-rose-50 dark:hover:bg-rose-900/20'}`}>

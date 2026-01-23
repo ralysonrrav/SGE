@@ -4,9 +4,9 @@ export interface User {
   name: string;
   email: string;
   password?: string;
-  role: 'admin' | 'student' | 'visitor';
-  status: 'active' | 'blocked'; // Ativo ou Bloqueado
-  isOnline: boolean; // Status de conexão em tempo real
+  role: 'administrator' | 'student' | 'visitor';
+  status: 'active' | 'blocked';
+  isOnline: boolean;
   lastAccess?: string;
   weeklyGoal?: number;
 }
@@ -39,12 +39,11 @@ export interface Subject {
   color: string;
 }
 
-// Novo: Modelo de Edital Pré-cadastrado pelo Admin
 export interface PredefinedEdital {
   id: string;
   name: string;
-  organization: string; // Ex: Polícia Federal, TJ-SP
-  examDate?: string; // Data prevista da prova
+  organization: string;
+  examDate?: string;
   subjects: Subject[];
   lastUpdated: string;
 }

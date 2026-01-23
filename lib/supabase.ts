@@ -14,7 +14,7 @@ let supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE
  * Se o usuário inverteu os valores no painel da Vercel (colocou a Key na variável da URL),
  * nós detectamos e trocamos para garantir que o app não quebre.
  */
-if (supabaseUrl.startsWith('sb_') && supabaseAnonKey.startsWith('http')) {
+if (supabaseUrl && supabaseUrl.startsWith('sb_') && supabaseAnonKey && supabaseAnonKey.startsWith('http')) {
   console.log("Supabase (LOG): Detectada inversão de chaves. Corrigindo automaticamente...");
   const temp = supabaseUrl;
   supabaseUrl = supabaseAnonKey;
@@ -31,6 +31,9 @@ export const supabase = (isValidUrl(supabaseUrl) && supabaseAnonKey)
         persistSession: true,
         detectSessionInUrl: true,
         flowType: 'pkce'
+      },
+      global: {
+        headers: { 'x-application-name': 'studyflow' }
       }
     }) 
   : null;

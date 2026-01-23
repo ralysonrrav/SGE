@@ -9,7 +9,7 @@ export const generateStudyCycle = async (
   subjects: Subject[]
 ) => {
   // Inicializa o cliente seguindo estritamente as diretrizes da documentação
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const subjectsSummary = subjects.map(s => `${s.name} (${s.topics.length} tópicos)`).join(", ");
   
@@ -64,7 +64,6 @@ export const generateStudyCycle = async (
       },
     });
 
-    // Acessa .text como propriedade (conforme documentação atualizada)
     const text = response.text;
     if (!text) {
       throw new Error("A IA não retornou um cronograma válido.");
@@ -72,6 +71,10 @@ export const generateStudyCycle = async (
 
     return JSON.parse(text);
   } catch (error: any) {
+    if (error.name === 'AbortError' || error.message?.includes('aborted')) {
+      console.warn("A requisição do Gemini foi abortada pelo sistema.");
+      return null;
+    }
     console.error("Erro na integração com Gemini:", error);
     throw new Error(error.message || "Falha ao processar inteligência do ciclo.");
   }

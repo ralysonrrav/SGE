@@ -164,7 +164,8 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onDelete, onClose, on
               </div>
 
               {/* TRAVA DE SEGURANÇA: Administrador não pode se auto-excluir */}
-              {user.role !== 'admin' ? (
+              {/* Fix: Comparing with 'administrator' instead of 'admin' to match User role types */}
+              {user.role !== 'administrator' ? (
                 <div className="flex flex-col items-center gap-4 pt-6">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Zona de Risco</p>
                   <button 

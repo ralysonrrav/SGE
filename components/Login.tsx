@@ -117,7 +117,8 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister }) => {
               id: data.user!.id,
               name: data.user!.user_metadata?.full_name || 'Usuário',
               email: data.user!.email!,
-              role: data.user!.email === 'ralysonriccelli@gmail.com' ? 'admin' : 'student',
+              // Fix: Changed 'admin' to 'administrator' to match User role type
+              role: data.user!.email === 'ralysonriccelli@gmail.com' ? 'administrator' : 'student',
               status: 'active',
               isOnline: true
             });
