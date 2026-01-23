@@ -69,7 +69,6 @@ const App: React.FC = () => {
         return;
       }
 
-      // 1. Checar sessão existente
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         const u: User = {
@@ -85,9 +84,8 @@ const App: React.FC = () => {
       }
       setIsLoaded(true);
 
-      // 2. Escutar mudanças (Login/Logout)
       const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-        if (event === 'SIGNED_IN' && session?.user) {
+        if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && session?.user) {
           const u: User = {
             id: session.user.id,
             name: session.user.user_metadata?.full_name || 'Usuário',
@@ -128,7 +126,7 @@ const App: React.FC = () => {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center">
         <Loader2 className="animate-spin text-indigo-600 mb-4" size={40} />
-        <p className="text-slate-500 font-bold uppercase text-xs tracking-widest">Iniciando Fluxo...</p>
+        <p className="text-slate-500 font-bold uppercase text-xs tracking-widest">Sincronizando...</p>
       </div>
     );
   }
@@ -146,7 +144,7 @@ const App: React.FC = () => {
   const renderPage = () => {
     switch (currentPage) {
       case 'inicio': return <Dashboard subjects={subjects} mocks={mocks} cycle={cycle} studyLogs={studyLogs} weeklyGoal={user.weeklyGoal || 20} onUpdateGoal={() => {}} isDarkMode={isDarkMode} />;
-      case 'disciplinas': return <Disciplinas subjects={subjects} setSubjects={setSubjects} predefinedEditais={editais} onAddLog={() => {}} />;
+      case 'disciplinas': return <Disciplinas user={user} subjects={subjects} setSubjects={setSubjects} predefinedEditais={editais} onAddLog={() => {}} />;
       case 'ciclos': return <Ciclos subjects={subjects} setCycle={setCycle} cycle={cycle} />;
       case 'revisao': return <Revisao subjects={subjects} setSubjects={setSubjects} onAddLog={() => {}} />;
       case 'simulados': return <Simulados mocks={mocks} setMocks={setMocks} subjects={subjects} />;
@@ -167,12 +165,13 @@ const App: React.FC = () => {
           <div className="p-8 flex items-center gap-4">
             <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg"><Award size={28} /></div>
             <div>
-              <h1 className="text-xl font-black text-slate-900 dark:text-slate-100">StudyFlow</h1>
-              <p className="text-[10px] font-black uppercase tracking-widest text-indigo-600">Concursos</p>
+              <h1 className="text-xl font-black text-slate-900 dark:text-slate-100 leading-none">StudyFlow</h1>
+              <p className="text-[10px] font-black uppercase tracking-widest mt-1 text-indigo-600">Concursos</p>
             </div>
           </div>
           
           <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
+            <p className="px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 mt-4">Principal</p>
             {[
               { id: 'inicio', label: 'Início', icon: <Home size={18} /> },
               { id: 'disciplinas', label: 'Disciplinas', icon: <BookOpen size={18} /> },
@@ -180,19 +179,23 @@ const App: React.FC = () => {
               { id: 'revisao', label: 'Revisão', icon: <RefreshCcw size={18} /> },
               { id: 'simulados', label: 'Simulados', icon: <BarChart2 size={18} /> },
             ].map((item) => (
-              <button key={item.id} onClick={() => { setCurrentPage(item.id); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-bold transition-all ${currentPage === item.id ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800'}`}>
+              <button key={item.id} onClick={() => { setCurrentPage(item.id); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-bold transition-all ${currentPage === item.id ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'}`}>
                 {item.icon} {item.label}
               </button>
             ))}
           </nav>
 
           <div className="p-6 border-t border-slate-200 dark:border-slate-800">
-             <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-rose-500 font-bold text-xs p-3 hover:bg-rose-50 rounded-xl"><LogOut size={16} /> Sair</button>
+             <div className="bg-slate-200 dark:bg-slate-950 p-1 rounded-2xl flex items-center mb-4">
+                <button onClick={() => setIsDarkMode(false)} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl transition-all ${!isDarkMode ? 'bg-white text-indigo-600 shadow-md font-black' : 'text-slate-400'}`}><Sun size={16} /></button>
+                <button onClick={() => setIsDarkMode(true)} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl transition-all ${isDarkMode ? 'bg-slate-800 text-indigo-400 shadow-md font-black' : 'text-slate-400'}`}><Moon size={16} /></button>
+             </div>
+             <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-rose-500 font-bold text-xs p-3 hover:bg-rose-50 rounded-xl transition-all"><LogOut size={16} /> Sair</button>
           </div>
         </div>
       </aside>
 
-      <main className="flex-1 md:ml-72 overflow-y-auto bg-white dark:bg-slate-950">
+      <main className="flex-1 md:ml-72 overflow-y-auto bg-white dark:bg-slate-950 transition-colors">
         <div className="max-w-6xl mx-auto p-6 md:p-12">{renderPage()}</div>
       </main>
     </div>
