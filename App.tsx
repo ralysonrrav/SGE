@@ -48,17 +48,33 @@ const App: React.FC = () => {
 
   const fetchUserData = useCallback(async (userId: string) => {
     if (!supabase) return;
+    
+    // Carregamento em paralelo para evitar que uma consulta lenta trave as outras
+    const fetchSubjects = supabase.from('subjects').select('*').eq('user_id', userId).order('created_at', { ascending: true });
+    const fetchMocks = supabase.from('mocks').select('*').eq('user_id', userId).order('date', { ascending: false });
+    const fetchLogs = supabase.from('study_logs').select('*').eq('user_id', userId).order('date', { ascending: false });
+
     try {
-      const { data: subData } = await supabase.from('subjects').select('*').eq('user_id', userId).order('created_at', { ascending: true });
-      if (subData) setSubjects(subData.map((s, index) => ({ ...s, id: String(s.id), topics: Array.isArray(s.topics) ? s.topics : [], color: COLORS[index % COLORS.length] })));
+      const [resSub, resMock, resLog] = await Promise.all([fetchSubjects, fetchMocks, fetchLogs]);
 
-      const { data: mockData } = await supabase.from('mocks').select('*').eq('user_id', userId).order('date', { ascending: false });
-      if (mockData) setMocks(mockData.map(m => ({ ...m, id: String(m.id) })));
+      if (resSub.data) {
+        setSubjects(resSub.data.map((s, index) => ({
+          ...s,
+          id: String(s.id),
+          topics: Array.isArray(s.topics) ? s.topics : [],
+          color: COLORS[index % COLORS.length]
+        })));
+      }
 
-      const { data: logData } = await supabase.from('study_logs').select('*').eq('user_id', userId).order('date', { ascending: false });
-      if (logData) setStudyLogs(logData.map(l => ({ ...l, id: String(l.id) })));
+      if (resMock.data) {
+        setMocks(resMock.data.map(m => ({ ...m, id: String(m.id) })));
+      }
+
+      if (resLog.data) {
+        setStudyLogs(resLog.data.map(l => ({ ...l, id: String(l.id) })));
+      }
     } catch (err) {
-      console.error("Erro ao sincronizar dados:", err);
+      console.warn("Aviso: Falha ao carregar dados remotos. Usando cache local.");
     }
   }, []);
 
@@ -66,9 +82,11 @@ const App: React.FC = () => {
     if (!user || !supabase) return;
     try {
       setIsLoaded(false);
-      await supabase.from('subjects').delete().eq('user_id', user.id);
-      await supabase.from('mocks').delete().eq('user_id', user.id);
-      await supabase.from('study_logs').delete().eq('user_id', user.id);
+      await Promise.all([
+        supabase.from('subjects').delete().eq('user_id', user.id),
+        supabase.from('mocks').delete().eq('user_id', user.id),
+        supabase.from('study_logs').delete().eq('user_id', user.id)
+      ]);
       
       setSubjects([]);
       setMocks([]);
@@ -84,10 +102,24 @@ const App: React.FC = () => {
 
   useEffect(() => {
     let isMounted = true;
+    
+    // Timeout de segurança: Força o app a abrir em no máximo 4 segundos
+    const safetyTimeout = setTimeout(() => {
+      if (isMounted && !isLoaded) {
+        console.warn("Safety timeout atingido: Forçando abertura da interface.");
+        setIsLoaded(true);
+      }
+    }, 4000);
+
     const init = async () => {
       try {
-        if (!supabase) { setIsLoaded(true); return; }
+        if (!supabase) { 
+          if (isMounted) setIsLoaded(true); 
+          return; 
+        }
+        
         const { data: { session } } = await supabase.auth.getSession();
+        
         if (session?.user && isMounted) {
           const u: User = {
             id: session.user.id,
@@ -98,22 +130,32 @@ const App: React.FC = () => {
             isOnline: true
           };
           setUser(u);
-          await fetchUserData(session.user.id);
+          // Não usamos await aqui para não travar o setIsLoaded(true) se o fetch demorar
+          fetchUserData(session.user.id);
         }
       } catch (err) {
-        console.error(err);
+        console.error("Erro na inicialização:", err);
       } finally {
+        clearTimeout(safetyTimeout);
         if (isMounted) setIsLoaded(true);
       }
     };
+    
     init();
 
     const { data: { subscription } } = supabase 
       ? supabase.auth.onAuthStateChange(async (event, session) => {
           if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && session?.user && isMounted) {
-            const u: User = { id: session.user.id, name: session.user.user_metadata?.full_name || 'Usuário', email: session.user.email!, role: session.user.email === 'ralysonriccelli@gmail.com' ? 'admin' : 'student', status: 'active', isOnline: true };
+            const u: User = { 
+              id: session.user.id, 
+              name: session.user.user_metadata?.full_name || 'Usuário', 
+              email: session.user.email!, 
+              role: session.user.email === 'ralysonriccelli@gmail.com' ? 'admin' : 'student', 
+              status: 'active', 
+              isOnline: true 
+            };
             setUser(u);
-            await fetchUserData(session.user.id);
+            fetchUserData(session.user.id);
           } else if (event === 'SIGNED_OUT' && isMounted) {
             setUser(null);
             setSubjects([]);
@@ -123,7 +165,11 @@ const App: React.FC = () => {
         })
       : { data: { subscription: { unsubscribe: () => {} } } };
 
-    return () => { isMounted = false; subscription.unsubscribe(); };
+    return () => { 
+      isMounted = false; 
+      clearTimeout(safetyTimeout);
+      subscription.unsubscribe(); 
+    };
   }, [fetchUserData]);
 
   useEffect(() => {
@@ -136,9 +182,12 @@ const App: React.FC = () => {
   if (!isLoaded) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
-        <Loader2 className="animate-spin text-indigo-500 mb-4" size={48} />
+        <div className="relative mb-8">
+           <div className="w-16 h-16 border-4 border-indigo-500/20 rounded-full animate-pulse"></div>
+           <Loader2 className="absolute inset-0 animate-spin text-indigo-500" size={64} />
+        </div>
         <h2 className="text-white font-black text-xl mb-2">StudyFlow Pro</h2>
-        <p className="text-slate-500 text-sm font-bold uppercase tracking-widest animate-pulse">Sincronizando banco de dados...</p>
+        <p className="text-slate-500 text-sm font-bold uppercase tracking-widest animate-pulse">Iniciando ambiente de estudos...</p>
       </div>
     );
   }
