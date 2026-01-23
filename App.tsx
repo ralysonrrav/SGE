@@ -14,6 +14,9 @@ import Simulados from './components/Simulados';
 import Dashboard from './components/Dashboard';
 import Admin from './components/Admin';
 
+// Mover constantes para fora para evitar re-renderizações infinitas
+const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6'];
+
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [currentPage, setCurrentPage] = useState('inicio');
@@ -42,47 +45,56 @@ const App: React.FC = () => {
     }
   ]);
 
-  const colors = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6'];
-
   const fetchUserData = useCallback(async (userId: string) => {
     if (!supabase) return;
-    const { data: subData, error } = await supabase
-      .from('subjects')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: true });
-    
-    if (!error && subData) {
-      setSubjects(subData.map((s, index) => ({
-        ...s,
-        id: String(s.id),
-        topics: s.topics || [],
-        color: colors[index % colors.length]
-      })));
+    try {
+      const { data: subData, error } = await supabase
+        .from('subjects')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: true });
+      
+      if (error) throw error;
+
+      if (subData) {
+        setSubjects(subData.map((s, index) => ({
+          ...s,
+          id: String(s.id),
+          topics: s.topics || [],
+          color: COLORS[index % COLORS.length]
+        })));
+      }
+    } catch (err) {
+      console.error("Erro ao buscar dados do usuário:", err);
     }
-  }, [colors]);
+  }, []);
 
   useEffect(() => {
     const initializeAuth = async () => {
-      if (!supabase) {
-        setIsLoaded(true);
-        return;
-      }
+      try {
+        if (!supabase) {
+          setIsLoaded(true);
+          return;
+        }
 
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        const u: User = {
-          id: session.user.id,
-          name: session.user.user_metadata?.full_name || 'Usuário',
-          email: session.user.email!,
-          role: session.user.email === 'ralysonriccelli@gmail.com' ? 'admin' : 'student',
-          status: 'active',
-          isOnline: true
-        };
-        setUser(u);
-        await fetchUserData(session.user.id);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const u: User = {
+            id: session.user.id,
+            name: session.user.user_metadata?.full_name || 'Usuário',
+            email: session.user.email!,
+            role: session.user.email === 'ralysonriccelli@gmail.com' ? 'admin' : 'student',
+            status: 'active',
+            isOnline: true
+          };
+          setUser(u);
+          await fetchUserData(session.user.id);
+        }
+      } catch (err) {
+        console.error("Erro crítico na inicialização:", err);
+      } finally {
+        setIsLoaded(true);
       }
-      setIsLoaded(true);
 
       const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
         if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && session?.user) {
@@ -126,7 +138,7 @@ const App: React.FC = () => {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center">
         <Loader2 className="animate-spin text-indigo-600 mb-4" size={40} />
-        <p className="text-slate-500 font-bold uppercase text-xs tracking-widest">Sincronizando...</p>
+        <p className="text-slate-500 font-bold uppercase text-xs tracking-widest animate-pulse">Sincronizando Banco de Dados...</p>
       </div>
     );
   }

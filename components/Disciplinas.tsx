@@ -2,8 +2,9 @@
 import React, { useState } from 'react';
 import { Subject, Topic, PredefinedEdital, User } from '../types';
 import { supabase } from '../lib/supabase';
-// Added missing BookOpen icon to the imports below
 import { Plus, Trash2, ChevronDown, ChevronUp, CheckCircle, X, Layers, ArrowRight, Loader2, Edit3, Save, AlignLeft, Check, BookOpen } from 'lucide-react';
+
+const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6'];
 
 interface DisciplinasProps {
   user: User;
@@ -26,27 +27,31 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
   const [editingSubjectId, setEditingSubjectId] = useState<string | null>(null);
   const [editSubjectValue, setEditSubjectValue] = useState('');
 
-  const colors = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6'];
-
   const addSubject = async (name: string, topics: Topic[] = []) => {
     if (!name.trim()) return;
     setLoading(true);
     try {
       if (supabase) {
-        // CRÍTICO: Incluir user_id para respeitar a política de RLS do banco
+        // Inserção no banco de dados com vínculo ao user_id
         const { data, error } = await supabase
           .from('subjects')
           .insert([{ 
             name: name.trim(), 
-            topics, 
+            topics: topics, 
             user_id: user.id 
           }])
           .select()
           .single();
 
         if (error) {
-          console.error("Erro Supabase ao inserir disciplina:", error.message);
-          alert(`Erro ao salvar no banco: ${error.message}`);
+          console.error("Erro detalhado do Supabase:", error);
+          if (error.code === '42P01') {
+            alert("Erro: A tabela 'subjects' não foi encontrada. Verifique se executou o script SQL no Supabase.");
+          } else if (error.code === '42703') {
+            alert("Erro: A coluna 'user_id' não existe na tabela 'subjects'. Execute o script SQL de atualização.");
+          } else {
+            alert(`Erro ao cadastrar: ${error.message}`);
+          }
           return;
         }
 
@@ -54,33 +59,31 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
           setSubjects(prev => [...prev, { 
             ...data, 
             id: String(data.id), 
-            color: colors[prev.length % colors.length] 
+            color: COLORS[prev.length % COLORS.length] 
           }]);
         }
       } else {
-        // Fallback offline (apenas se o Supabase não estiver inicializado)
-        setSubjects(prev => [...prev, { id: Date.now().toString(), name: name.trim(), topics, color: colors[prev.length % colors.length] }]);
+        setSubjects(prev => [...prev, { id: Date.now().toString(), name: name.trim(), topics, color: COLORS[prev.length % COLORS.length] }]);
       }
       setNewSubjectName('');
     } catch (err: any) {
-      console.error("Erro inesperado ao adicionar disciplina:", err);
-      alert("Ocorreu um erro inesperado ao salvar. Verifique sua conexão.");
+      console.error("Erro inesperado:", err);
+      alert("Erro ao salvar. Verifique o console do navegador para detalhes.");
     } finally {
       setLoading(false);
     }
   };
 
   const deleteSubject = async (id: string) => {
-    if (!window.confirm("Deseja realmente excluir esta disciplina e todos os seus tópicos?")) return;
+    if (!window.confirm("Excluir esta disciplina permanentemente?")) return;
     const idToDelete = String(id);
     
-    // UI Otimista
     setSubjects(prev => prev.filter(s => String(s.id) !== idToDelete));
     if (expandedSubject === idToDelete) setExpandedSubject(null);
     
     if (supabase) {
       const { error } = await supabase.from('subjects').delete().eq('id', idToDelete);
-      if (error) console.error("Erro ao deletar disciplina:", error.message);
+      if (error) console.error("Erro ao deletar:", error.message);
     }
   };
 
@@ -90,90 +93,46 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
     
     if (supabase) {
       const { error } = await supabase.from('subjects').update(payload).eq('id', sId);
-      if (error) console.error("Erro ao atualizar disciplina:", error.message);
+      if (error) console.error("Erro ao atualizar:", error.message);
     }
-  };
-
-  const deleteTopic = async (subjectId: string, topicId: string) => {
-    if (!window.confirm("Excluir este tópico?")) return;
-    const sId = String(subjectId);
-    const tId = String(topicId);
-    
-    const subject = subjects.find(s => String(s.id) === sId);
-    if (!subject) return;
-    
-    const updatedTopics = subject.topics.filter(t => String(t.id) !== tId);
-    await updateSubjectData(subjectId, { topics: updatedTopics });
-  };
-
-  const renameSubject = async (id: string) => {
-    if (!editSubjectValue.trim()) return;
-    await updateSubjectData(id, { name: editSubjectValue.trim() });
-    setEditingSubjectId(null);
-  };
-
-  const renameTopic = async (subjectId: string, topicId: string) => {
-    const sId = String(subjectId);
-    const tId = String(topicId);
-    const subject = subjects.find(s => String(s.id) === sId);
-    if (!subject || !editTopicValue.trim()) return;
-    const updated = subject.topics.map(t => String(t.id) === tId ? { ...t, title: editTopicValue.trim() } : t);
-    await updateSubjectData(subjectId, { topics: updated });
-    setEditingTopicId(null);
   };
 
   const addTopic = async (subjectId: string) => {
     if (!newTopicTitle.trim()) return;
-    const sId = String(subjectId);
-    const subject = subjects.find(s => String(s.id) === sId);
+    const subject = subjects.find(s => String(s.id) === String(subjectId));
     if (!subject) return;
     const newTopic = { id: Math.random().toString(36).substr(2, 9), title: newTopicTitle, completed: false, importance: 3 };
     await updateSubjectData(subjectId, { topics: [...subject.topics, newTopic] });
     setNewTopicTitle('');
   };
 
-  const saveBulkTopics = async (subjectId: string) => {
-    const sId = String(subjectId);
-    const subject = subjects.find(s => String(s.id) === sId);
-    if (!subject) return;
-    const lines = bulkText.split('\n').filter(l => l.trim() !== '');
-    const newTopics = lines.map(line => {
-      const existing = subject.topics.find(t => t.title === line.trim());
-      return existing || { id: Math.random().toString(36).substr(2, 9), title: line.trim(), completed: false, importance: 3 };
-    });
-    await updateSubjectData(subjectId, { topics: newTopics });
-    setBulkEditId(null);
-  };
-
   const toggleTopic = async (subjectId: string, topicId: string) => {
-    const sId = String(subjectId);
-    const tId = String(topicId);
-    const subject = subjects.find(s => String(s.id) === sId);
+    const subject = subjects.find(s => String(s.id) === String(subjectId));
     if (!subject) return;
-    const updated = subject.topics.map(t => String(t.id) === tId ? { ...t, completed: !t.completed, lastStudiedAt: !t.completed ? new Date().toISOString() : t.lastStudiedAt } : t);
+    const updated = subject.topics.map(t => String(t.id) === String(topicId) ? { ...t, completed: !t.completed, lastStudiedAt: !t.completed ? new Date().toISOString() : t.lastStudiedAt } : t);
     await updateSubjectData(subjectId, { topics: updated });
   };
 
-  const importEdital = async (edital: PredefinedEdital) => {
-    setLoading(true);
-    setIsCatalogOpen(false);
-    for (const sub of edital.subjects) await addSubject(sub.name, sub.topics);
-    setLoading(false);
+  const deleteTopic = async (subjectId: string, topicId: string) => {
+    const subject = subjects.find(s => String(s.id) === String(subjectId));
+    if (!subject) return;
+    const updated = subject.topics.filter(t => String(t.id) !== String(topicId));
+    await updateSubjectData(subjectId, { topics: updated });
   };
 
   return (
     <div className="space-y-6 pb-24 animate-in fade-in duration-500">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight transition-colors">Disciplinas</h2>
-          <p className="text-slate-500 font-medium dark:text-slate-400">Controle total sobre o edital e progresso.</p>
+          <h2 className="text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight">Disciplinas</h2>
+          <p className="text-slate-500 font-medium dark:text-slate-400">Monte seu edital verticalizado.</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setIsCatalogOpen(true)} className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-5 py-3 rounded-2xl font-bold hover:bg-slate-200 transition-all">
-            <Layers size={20} /> <span className="hidden md:inline">Catálogo</span>
+            <Layers size={20} /> <span className="hidden md:inline">Editais Prontos</span>
           </button>
           <div className="flex">
-            <input type="text" placeholder="Nova matéria..." className="px-5 py-3 border border-slate-200 dark:border-slate-800 rounded-l-2xl outline-none bg-white dark:bg-slate-900 font-bold dark:text-white" value={newSubjectName} onChange={(e) => setNewSubjectName(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addSubject(newSubjectName)} />
+            <input type="text" placeholder="Ex: Direito Penal" className="px-5 py-3 border border-slate-200 dark:border-slate-800 rounded-l-2xl outline-none bg-white dark:bg-slate-900 font-bold dark:text-white w-full" value={newSubjectName} onChange={(e) => setNewSubjectName(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addSubject(newSubjectName)} />
             <button onClick={() => addSubject(newSubjectName)} disabled={loading || !newSubjectName.trim()} className="bg-indigo-600 text-white px-5 rounded-r-2xl hover:bg-indigo-700 disabled:opacity-50 transition-colors">
               {loading ? <Loader2 className="animate-spin" size={20} /> : <Plus size={20} />}
             </button>
@@ -202,7 +161,7 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button onClick={(e) => { e.stopPropagation(); deleteSubject(subject.id); }} className="p-2 text-slate-300 hover:text-rose-500 rounded-xl transition-all" title="Excluir"><Trash2 size={18} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); deleteSubject(subject.id); }} className="p-2 text-slate-300 hover:text-rose-500 rounded-xl transition-all"><Trash2 size={18} /></button>
                   <div className={`p-2 rounded-xl transition-colors ${isExpanded ? 'bg-slate-800 text-white' : 'text-slate-400'}`}>
                     {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                   </div>
@@ -211,33 +170,19 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
 
               {isExpanded && (
                 <div className="px-6 pb-6 pt-2 border-t border-slate-50 dark:border-slate-800 animate-in slide-in-from-top-2 duration-300">
-                  <div className="flex items-center justify-between mt-4 mb-4">
-                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tópicos</h4>
-                    <button onClick={() => bulkEditId === sIdStr ? saveBulkTopics(subject.id) : (setBulkEditId(sIdStr), setBulkText(subject.topics.map(t => t.title).join('\n')))} className="px-3 py-1.5 rounded-lg text-[10px] font-black bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 transition-colors">
-                      {bulkEditId === sIdStr ? 'SALVAR ALTERAÇÕES' : 'EDIÇÃO EM MASSA'}
-                    </button>
-                  </div>
-
-                  {bulkEditId === sIdStr ? (
-                    <div className="space-y-3">
-                      <textarea className="w-full h-48 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 transition-all" value={bulkText} onChange={(e) => setBulkText(e.target.value)} />
-                      <button onClick={() => saveBulkTopics(subject.id)} className="w-full py-3 bg-indigo-600 text-white font-black rounded-xl">ATUALIZAR LISTA</button>
+                  <div className="space-y-1 mt-4">
+                    <div className="flex gap-2 mb-4">
+                      <input type="text" placeholder="Novo tópico do edital..." className="flex-1 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 transition-all" value={newTopicTitle} onChange={(e) => setNewTopicTitle(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addTopic(subject.id)} />
+                      <button onClick={() => addTopic(subject.id)} className="bg-slate-800 text-white px-6 rounded-xl font-black text-xs hover:bg-slate-700">Adicionar</button>
                     </div>
-                  ) : (
-                    <div className="space-y-1">
-                      <div className="flex gap-2 mb-4">
-                        <input type="text" placeholder="Adicionar tópico..." className="flex-1 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 transition-all" value={newTopicTitle} onChange={(e) => setNewTopicTitle(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addTopic(subject.id)} />
-                        <button onClick={() => addTopic(subject.id)} className="bg-slate-800 text-white px-6 rounded-xl font-black text-xs hover:bg-slate-700 transition-colors">ADD</button>
+                    {subject.topics.map(topic => (
+                      <div key={topic.id} className="flex items-center gap-3 p-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-xl group transition-all">
+                        <button onClick={() => toggleTopic(subject.id, topic.id)} className={`transition-all ${topic.completed ? 'text-emerald-500' : 'text-slate-300 hover:text-slate-400'}`}><CheckCircle size={20} /></button>
+                        <span className={`text-sm font-bold flex-1 ${topic.completed ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-200'}`}>{topic.title}</span>
+                        <button onClick={() => deleteTopic(subject.id, topic.id)} className="p-1.5 text-slate-400 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14} /></button>
                       </div>
-                      {subject.topics.map(topic => (
-                        <div key={topic.id} className="flex items-center gap-3 p-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-xl group transition-all">
-                          <button onClick={() => toggleTopic(subject.id, topic.id)} className={`transition-all ${topic.completed ? 'text-emerald-500' : 'text-slate-300 hover:text-slate-400'}`}><CheckCircle size={20} /></button>
-                          <span className={`text-sm font-bold flex-1 ${topic.completed ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-200'}`}>{topic.title}</span>
-                          <button onClick={() => deleteTopic(subject.id, topic.id)} className="p-1.5 text-slate-400 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14} /></button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -245,9 +190,8 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
         })}
         {subjects.length === 0 && !loading && (
           <div className="py-20 text-center bg-white dark:bg-slate-900 rounded-[2.5rem] border-2 border-dashed border-slate-200 dark:border-slate-800">
-             {/* Fixed: BookOpen is now imported */}
              <BookOpen className="mx-auto mb-4 text-slate-300" size={48} />
-             <p className="text-slate-500 font-bold uppercase text-xs tracking-widest">Nenhuma disciplina cadastrada</p>
+             <p className="text-slate-500 font-bold uppercase text-xs tracking-widest">Nenhuma disciplina cadastrada ainda</p>
           </div>
         )}
       </div>
@@ -266,7 +210,10 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
                     <h4 className="font-black text-slate-800 dark:text-white text-lg">{edital.name}</h4>
                     <p className="text-[10px] font-black text-indigo-600 uppercase mt-1 tracking-widest">{edital.organization}</p>
                   </div>
-                  <button onClick={() => importEdital(edital)} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-black text-xs flex items-center gap-2 hover:bg-indigo-700 shadow-md">IMPORTAR <ArrowRight size={14} /></button>
+                  <button onClick={() => {
+                    setIsCatalogOpen(false);
+                    edital.subjects.forEach(s => addSubject(s.name, s.topics));
+                  }} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-black text-xs flex items-center gap-2 hover:bg-indigo-700 shadow-md">IMPORTAR</button>
                 </div>
               ))}
             </div>
