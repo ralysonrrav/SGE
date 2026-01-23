@@ -1,24 +1,26 @@
 
 import React, { useState } from 'react';
-import { Subject, Topic } from '../types';
+import { Subject, Topic, User } from '../types';
+import { supabase, isNetworkError } from '../lib/supabase';
 import { 
   RefreshCcw, Bell, CheckCircle, Calendar, Clock, Target, Check, Activity, 
-  ArrowRight, AlertCircle, History, X, CheckCircle2
+  ArrowRight, AlertCircle, History, X, CheckCircle2, Loader2
 } from 'lucide-react';
 
 interface RevisaoProps {
+  user: User;
   subjects: Subject[];
   setSubjects: React.Dispatch<React.SetStateAction<Subject[]>>;
-  // Fix: Added date argument to match addStudyLog signature in App.tsx (Expected 4 arguments)
   onAddLog: (minutes: number, topicId: string, subjectId: string, date: string) => void;
 }
 
-const Revisao: React.FC<RevisaoProps> = ({ subjects, setSubjects, onAddLog }) => {
+const Revisao: React.FC<RevisaoProps> = ({ user, subjects, setSubjects, onAddLog }) => {
   const [editingTopicId, setEditingTopicId] = useState<string | null>(null);
   const [editMinutes, setEditMinutes] = useState(0);
   const [editAttempted, setEditAttempted] = useState(0);
   const [editCorrect, setEditCorrect] = useState(0);
   const [selectedMilestone, setSelectedMilestone] = useState<number | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const getAllCompletedTopics = () => {
     const list: { subject: Subject; topic: Topic }[] = [];
@@ -44,21 +46,49 @@ const Revisao: React.FC<RevisaoProps> = ({ subjects, setSubjects, onAddLog }) =>
     return { label: `Em ${diffDays}d`, color: 'text-slate-400 bg-slate-50 dark:bg-slate-800', icon: <Calendar size={12} /> };
   };
 
-  const saveStats = (subjectId: string, topicId: string) => {
+  const saveStats = async (subjectId: string, topicId: string) => {
     if (!selectedMilestone) { alert("Selecione o marco (7, 15 ou 30)."); return; }
-    setSubjects(prev => prev.map(s => String(s.id) === String(subjectId) ? {
-      ...s,
-      topics: s.topics.map(t => String(t.id) === String(topicId) ? {
-        ...t,
-        studyTimeMinutes: (t.studyTimeMinutes || 0) + editMinutes,
-        questionsAttempted: (t.questionsAttempted || 0) + editAttempted,
-        questionsCorrect: (t.questionsCorrect || 0) + editCorrect,
-        revisionsDone: Array.from(new Set([...(t.revisionsDone || []), selectedMilestone]))
-      } : t)
-    } : s));
-    // Fix: Provided current ISO date to satisfy the 4th argument requirement of onAddLog
-    if (editMinutes > 0) onAddLog(editMinutes, topicId, subjectId, new Date().toISOString());
-    setEditingTopicId(null);
+    
+    setIsSaving(true);
+    const subject = subjects.find(s => String(s.id) === String(subjectId));
+    if (!subject) return;
+
+    // 1. Preparar os novos tópicos atualizados
+    const updatedTopics = subject.topics.map(t => String(t.id) === String(topicId) ? {
+      ...t,
+      studyTimeMinutes: (t.studyTimeMinutes || 0) + editMinutes,
+      questionsAttempted: (t.questionsAttempted || 0) + editAttempted,
+      questionsCorrect: (t.questionsCorrect || 0) + editCorrect,
+      revisionsDone: Array.from(new Set([...(t.revisionsDone || []), selectedMilestone]))
+    } : t);
+
+    try {
+      // 2. Sincronizar com o Supabase
+      if (supabase && user.role !== 'visitor' && !String(subjectId).startsWith('local-')) {
+        const { error } = await supabase
+          .from('subjects')
+          .update({ topics: updatedTopics })
+          .eq('id', subjectId)
+          .eq('user_id', user.id);
+
+        if (error) throw error;
+      }
+
+      // 3. Atualizar Estado Local
+      setSubjects(prev => prev.map(s => String(s.id) === String(subjectId) ? { ...s, topics: updatedTopics } : s));
+      
+      // 4. Registrar o Log de Tempo (Sessão de Revisão)
+      if (editMinutes > 0) {
+        onAddLog(editMinutes, topicId, subjectId, new Date().toISOString());
+      }
+
+      setEditingTopicId(null);
+    } catch (err: any) {
+      console.error("Erro ao salvar revisão:", err);
+      alert("Erro ao sincronizar revisão. Dados salvos apenas localmente.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const completedTopics = getAllCompletedTopics();
@@ -90,7 +120,12 @@ const Revisao: React.FC<RevisaoProps> = ({ subjects, setSubjects, onAddLog }) =>
                           <h3 className="font-bold text-slate-800 dark:text-white text-lg">{topic.title}</h3>
                         </div>
                       </div>
-                      <button onClick={() => { setEditingTopicId(topic.id); setEditMinutes(0); setSelectedMilestone(null); }} className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-black hover:bg-indigo-700 transition-all flex items-center gap-2"><CheckCircle size={18} /> Concluir Marco</button>
+                      <button 
+                        onClick={() => { setEditingTopicId(topic.id); setEditMinutes(0); setSelectedMilestone(null); }} 
+                        className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-black hover:bg-indigo-700 transition-all flex items-center gap-2"
+                      >
+                        <CheckCircle size={18} /> Concluir Marco
+                      </button>
                     </div>
 
                     <div className="grid grid-cols-3 gap-3">
@@ -110,24 +145,31 @@ const Revisao: React.FC<RevisaoProps> = ({ subjects, setSubjects, onAddLog }) =>
                       <div className="mt-6 p-6 bg-indigo-50/50 dark:bg-indigo-900/10 border dark:border-indigo-900/30 rounded-2xl animate-in slide-in-from-top-4">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                           <div><label className="text-[10px] font-black text-slate-400 uppercase">Marco</label>
-                            <select className="w-full mt-1 p-2 rounded-lg border dark:bg-slate-950 dark:text-white outline-none" onChange={(e)=>setSelectedMilestone(parseInt(e.target.value))}>
+                            <select className="w-full mt-1 p-2 rounded-lg border dark:bg-slate-950 dark:text-white outline-none font-bold" onChange={(e)=>setSelectedMilestone(parseInt(e.target.value))}>
                               <option value="">Selecione...</option>
                               {[7,15,30].map(v => <option key={v} value={v} disabled={done.includes(v)}>{v} Dias</option>)}
                             </select>
                           </div>
                           <div><label className="text-[10px] font-black text-slate-400 uppercase">Minutos</label>
-                            <input type="number" className="w-full mt-1 p-2 rounded-lg border dark:bg-slate-950 dark:text-white" value={editMinutes} onChange={(e)=>setEditMinutes(parseInt(e.target.value)||0)} />
+                            <input type="number" className="w-full mt-1 p-2 rounded-lg border dark:bg-slate-950 dark:text-white font-bold" value={editMinutes} onChange={(e)=>setEditMinutes(parseInt(e.target.value)||0)} />
                           </div>
                           <div><label className="text-[10px] font-black text-slate-400 uppercase">Acertos/Questões</label>
                             <div className="flex gap-1 mt-1">
-                              <input type="number" className="w-1/2 p-2 rounded-lg border dark:bg-slate-950 dark:text-white" placeholder="Acertos" onChange={(e)=>setEditCorrect(parseInt(e.target.value)||0)} />
-                              <input type="number" className="w-1/2 p-2 rounded-lg border dark:bg-slate-950 dark:text-white" placeholder="Total" onChange={(e)=>setEditAttempted(parseInt(e.target.value)||0)} />
+                              <input type="number" className="w-1/2 p-2 rounded-lg border dark:bg-slate-950 dark:text-white font-bold" placeholder="Acertos" onChange={(e)=>setEditCorrect(parseInt(e.target.value)||0)} />
+                              <input type="number" className="w-1/2 p-2 rounded-lg border dark:bg-slate-950 dark:text-white font-bold" placeholder="Total" onChange={(e)=>setEditAttempted(parseInt(e.target.value)||0)} />
                             </div>
                           </div>
                         </div>
                         <div className="flex justify-end gap-2">
                           <button onClick={()=>setEditingTopicId(null)} className="px-4 py-2 text-xs font-bold text-slate-500">Cancelar</button>
-                          <button onClick={()=>saveStats(subject.id, topic.id)} className="px-6 py-2 bg-indigo-600 text-white rounded-lg text-xs font-black shadow-md">Salvar Revisão</button>
+                          <button 
+                            onClick={()=>saveStats(subject.id, topic.id)} 
+                            disabled={isSaving}
+                            className="px-6 py-2 bg-indigo-600 text-white rounded-lg text-xs font-black shadow-md flex items-center gap-2"
+                          >
+                            {isSaving ? <Loader2 className="animate-spin" size={14} /> : null}
+                            {isSaving ? 'SALVANDO...' : 'SALVAR REVISÃO'}
+                          </button>
                         </div>
                       </div>
                     )}

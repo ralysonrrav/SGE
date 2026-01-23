@@ -1,16 +1,17 @@
 
 import React, { useState } from 'react';
-import { MockExam, Subject } from '../types';
+import { MockExam, Subject, User } from '../types';
 import { supabase, isNetworkError } from '../lib/supabase';
-import { BarChart2, Plus, Trash2, TrendingUp, FileText, X, Loader2 } from 'lucide-react';
+import { Plus, Trash2, TrendingUp, FileText, X, Loader2 } from 'lucide-react';
 
 interface SimuladosProps {
+  user: User;
   mocks: MockExam[];
   setMocks: React.Dispatch<React.SetStateAction<MockExam[]>>;
   subjects: Subject[];
 }
 
-const Simulados: React.FC<SimuladosProps> = ({ mocks, setMocks, subjects }) => {
+const Simulados: React.FC<SimuladosProps> = ({ user, mocks, setMocks, subjects }) => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [title, setTitle] = useState('');
   const [score, setScore] = useState(0);
@@ -25,19 +26,30 @@ const Simulados: React.FC<SimuladosProps> = ({ mocks, setMocks, subjects }) => {
     let finalId = `local-${Date.now()}`;
 
     try {
-      if (supabase && navigator.onLine) {
+      if (supabase && user.role !== 'visitor') {
         const { data, error } = await supabase
           .from('mocks')
-          .insert([{ title: title.trim(), date, score, total_questions: total, subject_performance: {} }])
+          .insert([{ 
+            title: title.trim(), 
+            date, 
+            score, 
+            total_questions: total, // Nome exato da coluna no SQL
+            subject_performance: {}, // Nome exato da coluna no SQL
+            user_id: user.id 
+          }])
           .select()
           .single();
 
-        if (error) throw error;
+        if (error) {
+          console.error("Erro Supabase Simulados:", error);
+          alert("Erro ao salvar simulado: " + error.message);
+          throw error;
+        }
         if (data) finalId = String(data.id);
       }
     } catch (err: any) {
       if (!isNetworkError(err)) {
-        console.warn("Erro ao salvar simulado no servidor:", err.message);
+        console.warn("Erro ao salvar simulado:", err.message);
       }
     } finally {
       const newMock: MockExam = { id: finalId, title, date, score, totalQuestions: total, subjectPerformance: {} };
@@ -51,12 +63,14 @@ const Simulados: React.FC<SimuladosProps> = ({ mocks, setMocks, subjects }) => {
   };
 
   const removeMock = async (id: string) => {
-    if (!window.confirm("Deseja realmente excluir este simulado?")) return;
+    if (!window.confirm("Excluir este simulado?")) return;
     const idToRemove = String(id);
     setMocks(prev => prev.filter(m => String(m.id) !== idToRemove));
 
     if (supabase && !idToRemove.startsWith('local-')) {
-      try { await supabase.from('mocks').delete().eq('id', idToRemove); } 
+      try { 
+        await supabase.from('mocks').delete().eq('id', idToRemove).eq('user_id', user.id); 
+      } 
       catch (err) { if (!isNetworkError(err)) console.error(err); }
     }
   };
@@ -69,112 +83,105 @@ const Simulados: React.FC<SimuladosProps> = ({ mocks, setMocks, subjects }) => {
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight transition-colors">Estatísticas de Simulados</h2>
-          <p className="text-slate-500 dark:text-slate-400 font-medium transition-colors">Acompanhe sua evolução e métricas de acerto.</p>
+          <h2 className="text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight">Estatísticas de Simulados</h2>
+          <p className="text-slate-500">Acompanhe sua evolução e métricas de acerto.</p>
         </div>
-        <button 
-          onClick={() => setShowAddForm(true)}
-          disabled={loading}
-          className="bg-indigo-600 dark:bg-indigo-500 text-white px-6 py-3 rounded-xl font-black hover:bg-indigo-700 dark:hover:bg-indigo-400 transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
-        >
-          <Plus size={20} />
-          Cadastrar Resultado
+        <button onClick={() => setShowAddForm(true)} disabled={loading} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-black hover:bg-indigo-700 transition-all flex items-center gap-2 shadow-lg disabled:opacity-50">
+          <Plus size={20} /> Cadastrar Resultado
         </button>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
-          <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Média Geral de Acertos</p>
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border shadow-sm">
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Média Geral</p>
           <div className="flex items-end gap-2">
-            <h3 className="text-3xl font-black text-indigo-600 dark:text-indigo-400">{averageScore}%</h3>
+            <h3 className="text-3xl font-black text-indigo-600">{averageScore}%</h3>
             <TrendingUp size={24} className="text-emerald-500 mb-1" />
           </div>
         </div>
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
-          <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Total de Simulados</p>
-          <h3 className="text-3xl font-black text-slate-800 dark:text-slate-100">{mocks.length}</h3>
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border shadow-sm">
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total</p>
+          <h3 className="text-3xl font-black text-slate-800 dark:text-white">{mocks.length}</h3>
         </div>
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
-          <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">Melhor Desempenho</p>
-          <h3 className="text-3xl font-black text-emerald-600 dark:text-emerald-400">
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border shadow-sm">
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Melhor Nota</p>
+          <h3 className="text-3xl font-black text-emerald-600">
             {mocks.length > 0 ? Math.max(...mocks.map(m => Math.round((m.score / m.totalQuestions) * 100))) : 0}%
           </h3>
         </div>
       </div>
 
       {showAddForm && (
-        <div className="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-indigo-100 dark:border-indigo-900/30 shadow-2xl animate-in zoom-in-95 duration-200 transition-all relative">
-          <button onClick={() => setShowAddForm(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 p-2 rounded-xl bg-slate-50 dark:bg-slate-800"><X size={20} /></button>
-          <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 mb-6">Novo Resultado</h3>
+        <div className="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border shadow-2xl relative animate-in slide-in-from-top-4">
+          <button onClick={() => setShowAddForm(false)} className="absolute top-6 right-6 text-slate-400 p-2"><X size={20} /></button>
+          <h3 className="text-xl font-black text-slate-800 dark:text-white mb-6">Novo Resultado</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div>
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Título</label>
-              <input type="text" className="w-full px-4 py-3 border border-slate-200 dark:border-slate-800 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-950 dark:text-white font-bold" value={title} onChange={(e) => setTitle(e.target.value)} />
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Título do Simulado</label>
+              <input type="text" placeholder="Ex: PF 2024" className="w-full px-4 py-3 border rounded-xl outline-none font-bold bg-white dark:bg-slate-950 dark:text-white" value={title} onChange={(e) => setTitle(e.target.value)} />
             </div>
-            <div>
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Acertos</label>
-              <input type="number" className="w-full px-4 py-3 border border-slate-200 dark:border-slate-800 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-950 dark:text-white font-bold" value={score} onChange={(e) => setScore(parseInt(e.target.value) || 0)} />
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Acertos</label>
+              <input type="number" placeholder="Acertos" className="w-full px-4 py-3 border rounded-xl outline-none font-bold bg-white dark:bg-slate-950 dark:text-white" value={score || ''} onChange={(e) => setScore(parseInt(e.target.value) || 0)} />
             </div>
-            <div>
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Total</label>
-              <input type="number" className="w-full px-4 py-3 border border-slate-200 dark:border-slate-800 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-950 dark:text-white font-bold" value={total} onChange={(e) => setTotal(parseInt(e.target.value) || 0)} />
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total de Itens</label>
+              <input type="number" placeholder="Total" className="w-full px-4 py-3 border rounded-xl outline-none font-bold bg-white dark:bg-slate-950 dark:text-white" value={total || ''} onChange={(e) => setTotal(parseInt(e.target.value) || 0)} />
             </div>
-            <div>
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Data</label>
-              <input type="date" className="w-full px-4 py-3 border border-slate-200 dark:border-slate-800 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-950 dark:text-white font-bold" value={date} onChange={(e) => setDate(e.target.value)} />
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data</label>
+              <input type="date" className="w-full px-4 py-3 border rounded-xl outline-none font-bold bg-white dark:bg-slate-950 dark:text-white" value={date} onChange={(e) => setDate(e.target.value)} />
             </div>
           </div>
-          <div className="flex gap-4 mt-8 pt-6 border-t border-slate-100 dark:border-slate-800">
-            <button onClick={addMock} disabled={loading} className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black hover:bg-indigo-700 shadow-lg flex items-center gap-2">
-              {loading ? <Loader2 size={20} className="animate-spin" /> : 'SALVAR'}
+          <div className="flex gap-4 mt-8 pt-6 border-t dark:border-slate-800">
+            <button onClick={addMock} disabled={loading} className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black flex items-center gap-2 shadow-xl hover:bg-indigo-700 transition-all">
+              {loading ? <Loader2 size={20} className="animate-spin" /> : 'SALVAR NO PERFIL'}
             </button>
-            <button onClick={() => setShowAddForm(false)} className="text-slate-500 px-8 py-3 font-bold hover:bg-slate-100 rounded-xl">CANCELAR</button>
+            <button onClick={() => setShowAddForm(false)} className="text-slate-500 font-bold px-4 py-3">CANCELAR</button>
           </div>
         </div>
       )}
 
-      <div className="bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden overflow-x-auto">
-        <table className="w-full text-left min-w-[600px]">
-          <thead className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
+      <div className="bg-white dark:bg-slate-900 rounded-[2rem] border shadow-sm overflow-hidden">
+        <table className="w-full text-left">
+          <thead className="bg-slate-50 dark:bg-slate-800/50 border-b dark:border-slate-800">
             <tr>
               <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Simulado</th>
-              <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Data</th>
-              <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Acertos</th>
-              <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Eficiência</th>
-              <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Ações</th>
+              <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase text-center">Data</th>
+              <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase text-center">Eficiência</th>
+              <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase text-right">Ação</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+          <tbody className="divide-y dark:divide-slate-800">
             {mocks.map(mock => {
               const perc = Math.round((mock.score / mock.totalQuestions) * 100);
               return (
-                <tr key={mock.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-all group">
+                <tr key={mock.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-all">
                   <td className="px-6 py-5">
                     <div className="flex items-center gap-3">
-                      <div className="p-2.5 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-xl"><FileText size={18} /></div>
-                      <span className="font-black text-slate-800 dark:text-slate-200">{mock.title}</span>
+                      <FileText size={18} className="text-slate-400" />
+                      <span className="font-black text-slate-800 dark:text-white">{mock.title}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-5 text-center text-xs font-black text-slate-500">
-                    {new Date(mock.date).toLocaleDateString('pt-BR')}
-                  </td>
-                  <td className="px-6 py-5 text-center text-sm font-black text-slate-600 dark:text-slate-400">
-                    {mock.score} / {mock.totalQuestions}
-                  </td>
+                  <td className="px-6 py-5 text-center text-xs font-black text-slate-500">{new Date(mock.date).toLocaleDateString('pt-BR')}</td>
                   <td className="px-6 py-5 text-center">
-                    <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase shadow-sm ${
-                      perc >= 80 ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 
-                      perc >= 60 ? 'bg-amber-50 text-amber-600 border border-amber-100' : 'bg-rose-50 text-rose-600 border border-rose-100'
-                    }`}>
+                    <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase ${perc >= 80 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
                       {perc}%
                     </span>
                   </td>
                   <td className="px-6 py-5 text-right">
-                    <button onClick={() => removeMock(mock.id)} className="text-slate-300 hover:text-rose-500 p-2.5 rounded-xl hover:bg-rose-50 transition-all"><Trash2 size={18} /></button>
+                    <button onClick={() => removeMock(mock.id)} className="text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={18} /></button>
                   </td>
                 </tr>
               );
             })}
+            {mocks.length === 0 && (
+              <tr>
+                <td colSpan={4} className="py-20 text-center text-slate-400 font-bold italic text-xs tracking-widest uppercase">
+                  Nenhum simulado registrado
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
