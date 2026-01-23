@@ -1,5 +1,6 @@
-import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
-import { Subject } from "./types.ts"; // Use ./ se o arquivo estiver na mesma pasta
+
+import { GoogleGenAI, Type } from "@google/genai";
+import { Subject } from "../types";
 
 export const generateStudyCycle = async (
   board: string,
@@ -7,85 +8,79 @@ export const generateStudyCycle = async (
   hoursPerDay: number,
   subjects: Subject[]
 ) => {
-  const apiKey = import.meta.env.VITE_API_KEY;
-
-  // Validação preventiva para evitar erros de execução no navegador
-  if (!apiKey) {
-    throw new Error("A chave de API (VITE_API_KEY) não foi encontrada nas configurações da Vercel.");
-  }
-
-  const genAI = new GoogleGenerativeAI(apiKey);
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const subjectsSummary = subjects.map(s => `${s.name} (${s.topics.length} tópicos)`).join(", ");
   
   const prompt = `
-    Aja como um especialista em concursos públicos. Crie um cronograma de estudos para a banca examinadora "${board}".
-    A data da prova é ${examDate}. O aluno tem ${hoursPerDay} horas disponíveis por dia.
-    As disciplinas são: ${subjectsSummary}.
+    Aja como um especialista sênior em concursos públicos brasileiros. 
+    Crie um cronograma de estudos estratégico para a banca examinadora "${board}".
+    A data da prova é ${examDate}. O aluno tem ${hoursPerDay} horas líquidas disponíveis por dia.
+    As disciplinas cadastradas são: ${subjectsSummary}.
     
-    Aplique o Teorema de Pareto (80/20): identifique quais disciplinas costumam ser mais cobradas pela banca "${board}" e dedique mais tempo a elas.
-    
-    Retorne um JSON seguindo esta estrutura exata:
-    {
-      "schedule": [
-        {
-          "day": "Segunda-feira",
-          "sessions": [
-            { "subjectName": "Nome da Disciplina", "duration": 60, "focus": "Teoria/Questões" }
-          ]
-        }
-      ]
-    }
-    Gere para uma semana típica (7 dias).
+    Diretrizes Pedagógicas:
+    1. Aplique o Teorema de Pareto (80/20): Priorize disciplinas com maior peso histórico para a banca "${board}".
+    2. Intercalação: Não estude a mesma matéria por mais de 90 minutos seguidos.
+    3. Equilíbrio: Distribua as matérias ao longo dos 7 dias da semana.
+    4. Foco: Defina se o foco da sessão deve ser Teoria, Questões ou Revisão de Mapas.
   `;
 
   try {
-    const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
-      generationConfig: {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-pro-preview",
+      contents: prompt,
+      config: {
         responseMimeType: "application/json",
         responseSchema: {
-          type: SchemaType.OBJECT,
+          type: Type.OBJECT,
           properties: {
             schedule: {
-              type: SchemaType.ARRAY,
+              type: Type.ARRAY,
               items: {
-                type: SchemaType.OBJECT,
+                type: Type.OBJECT,
                 properties: {
-                  day: { type: SchemaType.STRING },
+                  day: { 
+                    type: Type.STRING,
+                    description: "Nome do dia da semana"
+                  },
                   sessions: {
-                    type: SchemaType.ARRAY,
+                    type: Type.ARRAY,
                     items: {
-                      type: SchemaType.OBJECT,
+                      type: Type.OBJECT,
                       properties: {
-                        subjectName: { type: SchemaType.STRING },
-                        duration: { type: SchemaType.NUMBER },
-                        focus: { type: SchemaType.STRING }
+                        subjectName: { type: Type.STRING },
+                        duration: { 
+                          type: Type.NUMBER,
+                          description: "Duração em minutos"
+                        },
+                        focus: { 
+                          type: Type.STRING,
+                          description: "Foco da sessão (Teoria, Questões, etc)"
+                        }
                       },
+                      propertyOrdering: ["subjectName", "duration", "focus"],
                       required: ["subjectName", "duration", "focus"]
                     }
                   }
                 },
+                propertyOrdering: ["day", "sessions"],
                 required: ["day", "sessions"]
               }
             }
-          }
-        }
-      }
+          },
+          required: ["schedule"]
+        },
+      },
     });
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text(); 
-
+    const text = response.text;
     if (!text) {
-      throw new Error("Resposta vazia da API do Gemini.");
+      throw new Error("A IA não retornou conteúdo válido.");
     }
 
-    return JSON.parse(text.trim());
+    return JSON.parse(text);
   } catch (error: any) {
-    // Captura erros específicos de cotação ou chave inválida
-    console.error("Erro detalhado na geração do ciclo:", error);
-    throw new Error(error.message || "Falha na comunicação com a IA.");
+    console.error("Erro na integração com Gemini:", error);
+    throw new Error(error.message || "Falha ao processar inteligência do ciclo.");
   }
 };
