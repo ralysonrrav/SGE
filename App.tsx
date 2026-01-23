@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Home, BookOpen, RefreshCcw, Calendar, BarChart2, LogOut, Menu, X,
   BrainCircuit, Award, Sun, Moon, Users, Database, Loader2
@@ -14,7 +14,6 @@ import Simulados from './components/Simulados';
 import Dashboard from './components/Dashboard';
 import Admin from './components/Admin';
 
-// Mover constantes para fora para evitar re-renderizações infinitas
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6'];
 
 const App: React.FC = () => {
@@ -55,7 +54,6 @@ const App: React.FC = () => {
         .order('created_at', { ascending: true });
       
       if (error) throw error;
-
       if (subData) {
         setSubjects(subData.map((s, index) => ({
           ...s,
@@ -65,20 +63,27 @@ const App: React.FC = () => {
         })));
       }
     } catch (err) {
-      console.error("Erro ao buscar dados do usuário:", err);
+      console.error("Erro ao sincronizar matérias:", err);
     }
   }, []);
 
   useEffect(() => {
-    const initializeAuth = async () => {
+    let isMounted = true;
+
+    const init = async () => {
+      // Timeout de segurança: se o banco não responder em 3s, destrava a tela
+      const safetyTimeout = setTimeout(() => {
+        if (isMounted && !isLoaded) setIsLoaded(true);
+      }, 3000);
+
       try {
         if (!supabase) {
-          setIsLoaded(true);
+          if (isMounted) setIsLoaded(true);
           return;
         }
 
         const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
+        if (session?.user && isMounted) {
           const u: User = {
             id: session.user.id,
             name: session.user.user_metadata?.full_name || 'Usuário',
@@ -91,33 +96,41 @@ const App: React.FC = () => {
           await fetchUserData(session.user.id);
         }
       } catch (err) {
-        console.error("Erro crítico na inicialização:", err);
+        console.error("Falha na inicialização da sessão:", err);
       } finally {
-        setIsLoaded(true);
+        clearTimeout(safetyTimeout);
+        if (isMounted) setIsLoaded(true);
       }
-
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-        if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && session?.user) {
-          const u: User = {
-            id: session.user.id,
-            name: session.user.user_metadata?.full_name || 'Usuário',
-            email: session.user.email!,
-            role: session.user.email === 'ralysonriccelli@gmail.com' ? 'admin' : 'student',
-            status: 'active',
-            isOnline: true
-          };
-          setUser(u);
-          await fetchUserData(session.user.id);
-        } else if (event === 'SIGNED_OUT') {
-          setUser(null);
-          setSubjects([]);
-        }
-      });
-
-      return () => subscription.unsubscribe();
     };
 
-    initializeAuth();
+    init();
+
+    // Listener de autenticação
+    const { data: { subscription } } = supabase 
+      ? supabase.auth.onAuthStateChange(async (event, session) => {
+          if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && session?.user && isMounted) {
+            const u: User = {
+              id: session.user.id,
+              name: session.user.user_metadata?.full_name || 'Usuário',
+              email: session.user.email!,
+              role: session.user.email === 'ralysonriccelli@gmail.com' ? 'admin' : 'student',
+              status: 'active',
+              isOnline: true
+            };
+            setUser(u);
+            await fetchUserData(session.user.id);
+          } else if (event === 'SIGNED_OUT' && isMounted) {
+            setUser(null);
+            setSubjects([]);
+            setCurrentPage('inicio');
+          }
+        })
+      : { data: { subscription: { unsubscribe: () => {} } } };
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, [fetchUserData]);
 
   useEffect(() => {
@@ -136,9 +149,19 @@ const App: React.FC = () => {
 
   if (!isLoaded) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center">
-        <Loader2 className="animate-spin text-indigo-600 mb-4" size={40} />
-        <p className="text-slate-500 font-bold uppercase text-xs tracking-widest animate-pulse">Sincronizando Banco de Dados...</p>
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
+        <div className="relative w-24 h-24 mb-8">
+           <div className="absolute inset-0 border-4 border-indigo-500/20 rounded-full"></div>
+           <div className="absolute inset-0 border-4 border-t-indigo-500 rounded-full animate-spin"></div>
+        </div>
+        <h2 className="text-white font-black text-xl mb-2">StudyFlow Pro</h2>
+        <p className="text-slate-500 text-sm font-bold uppercase tracking-widest animate-pulse">Sincronizando seu progresso...</p>
+        <button 
+          onClick={() => setIsLoaded(true)} 
+          className="mt-8 text-indigo-400 text-[10px] font-black uppercase hover:underline"
+        >
+          Forçar Entrada
+        </button>
       </div>
     );
   }
@@ -183,7 +206,7 @@ const App: React.FC = () => {
           </div>
           
           <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
-            <p className="px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 mt-4">Principal</p>
+            <p className="px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 mt-4">Menu Principal</p>
             {[
               { id: 'inicio', label: 'Início', icon: <Home size={18} /> },
               { id: 'disciplinas', label: 'Disciplinas', icon: <BookOpen size={18} /> },

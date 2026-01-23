@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Subject, Topic, PredefinedEdital, User } from '../types';
 import { supabase } from '../lib/supabase';
-import { Plus, Trash2, ChevronDown, ChevronUp, CheckCircle, X, Layers, ArrowRight, Loader2, Edit3, Save, AlignLeft, Check, BookOpen } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, ChevronUp, CheckCircle, X, Layers, ArrowRight, Loader2, BookOpen } from 'lucide-react';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6'];
 
@@ -20,19 +20,14 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
   const [newTopicTitle, setNewTopicTitle] = useState('');
   const [loading, setLoading] = useState(false);
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
-  const [bulkEditId, setBulkEditId] = useState<string | null>(null);
-  const [bulkText, setBulkText] = useState('');
-  const [editingTopicId, setEditingTopicId] = useState<string | null>(null);
-  const [editTopicValue, setEditTopicValue] = useState('');
-  const [editingSubjectId, setEditingSubjectId] = useState<string | null>(null);
-  const [editSubjectValue, setEditSubjectValue] = useState('');
 
   const addSubject = async (name: string, topics: Topic[] = []) => {
     if (!name.trim()) return;
     setLoading(true);
     try {
       if (supabase) {
-        // Inserção no banco de dados com vínculo ao user_id
+        console.debug("Tentando cadastrar disciplina para usuário:", user.id);
+        
         const { data, error } = await supabase
           .from('subjects')
           .insert([{ 
@@ -44,13 +39,11 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
           .single();
 
         if (error) {
-          console.error("Erro detalhado do Supabase:", error);
-          if (error.code === '42P01') {
-            alert("Erro: A tabela 'subjects' não foi encontrada. Verifique se executou o script SQL no Supabase.");
-          } else if (error.code === '42703') {
-            alert("Erro: A coluna 'user_id' não existe na tabela 'subjects'. Execute o script SQL de atualização.");
+          console.error("Erro Supabase:", error);
+          if (error.code === '42703') {
+            alert("Erro de Banco de Dados: A coluna 'user_id' não foi encontrada na tabela 'subjects'. Por favor, execute o script SQL de atualização fornecido.");
           } else {
-            alert(`Erro ao cadastrar: ${error.message}`);
+            alert(`Falha ao cadastrar matéria: ${error.message}`);
           }
           return;
         }
@@ -61,14 +54,21 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
             id: String(data.id), 
             color: COLORS[prev.length % COLORS.length] 
           }]);
+          setNewSubjectName('');
         }
       } else {
-        setSubjects(prev => [...prev, { id: Date.now().toString(), name: name.trim(), topics, color: COLORS[prev.length % COLORS.length] }]);
+        // Fallback para modo offline se o Supabase estiver quebrado
+        setSubjects(prev => [...prev, { 
+          id: Date.now().toString(), 
+          name: name.trim(), 
+          topics, 
+          color: COLORS[prev.length % COLORS.length] 
+        }]);
+        setNewSubjectName('');
       }
-      setNewSubjectName('');
     } catch (err: any) {
-      console.error("Erro inesperado:", err);
-      alert("Erro ao salvar. Verifique o console do navegador para detalhes.");
+      console.error("Erro inesperado no cadastro:", err);
+      alert("Ocorreu um erro inesperado. Tente recarregar a página.");
     } finally {
       setLoading(false);
     }
@@ -77,23 +77,18 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
   const deleteSubject = async (id: string) => {
     if (!window.confirm("Excluir esta disciplina permanentemente?")) return;
     const idToDelete = String(id);
-    
     setSubjects(prev => prev.filter(s => String(s.id) !== idToDelete));
-    if (expandedSubject === idToDelete) setExpandedSubject(null);
     
     if (supabase) {
-      const { error } = await supabase.from('subjects').delete().eq('id', idToDelete);
-      if (error) console.error("Erro ao deletar:", error.message);
+      await supabase.from('subjects').delete().eq('id', idToDelete);
     }
   };
 
   const updateSubjectData = async (subjectId: string, payload: Partial<Subject>) => {
     const sId = String(subjectId);
     setSubjects(prev => prev.map(s => String(s.id) === sId ? { ...s, ...payload } : s));
-    
     if (supabase) {
-      const { error } = await supabase.from('subjects').update(payload).eq('id', sId);
-      if (error) console.error("Erro ao atualizar:", error.message);
+      await supabase.from('subjects').update(payload).eq('id', sId);
     }
   };
 
@@ -113,18 +108,11 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
     await updateSubjectData(subjectId, { topics: updated });
   };
 
-  const deleteTopic = async (subjectId: string, topicId: string) => {
-    const subject = subjects.find(s => String(s.id) === String(subjectId));
-    if (!subject) return;
-    const updated = subject.topics.filter(t => String(t.id) !== String(topicId));
-    await updateSubjectData(subjectId, { topics: updated });
-  };
-
   return (
     <div className="space-y-6 pb-24 animate-in fade-in duration-500">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight">Disciplinas</h2>
+          <h2 className="text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight">Grade de Estudos</h2>
           <p className="text-slate-500 font-medium dark:text-slate-400">Monte seu edital verticalizado.</p>
         </div>
         <div className="flex gap-2">
@@ -132,8 +120,19 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
             <Layers size={20} /> <span className="hidden md:inline">Editais Prontos</span>
           </button>
           <div className="flex">
-            <input type="text" placeholder="Ex: Direito Penal" className="px-5 py-3 border border-slate-200 dark:border-slate-800 rounded-l-2xl outline-none bg-white dark:bg-slate-900 font-bold dark:text-white w-full" value={newSubjectName} onChange={(e) => setNewSubjectName(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addSubject(newSubjectName)} />
-            <button onClick={() => addSubject(newSubjectName)} disabled={loading || !newSubjectName.trim()} className="bg-indigo-600 text-white px-5 rounded-r-2xl hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+            <input 
+              type="text" 
+              placeholder="Ex: Direito Penal" 
+              className="px-5 py-3 border border-slate-200 dark:border-slate-800 rounded-l-2xl outline-none bg-white dark:bg-slate-900 font-bold dark:text-white w-full" 
+              value={newSubjectName} 
+              onChange={(e) => setNewSubjectName(e.target.value)} 
+              onKeyPress={(e) => e.key === 'Enter' && addSubject(newSubjectName)} 
+            />
+            <button 
+              onClick={() => addSubject(newSubjectName)} 
+              disabled={loading || !newSubjectName.trim()} 
+              className="bg-indigo-600 text-white px-5 rounded-r-2xl hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+            >
               {loading ? <Loader2 className="animate-spin" size={20} /> : <Plus size={20} />}
             </button>
           </div>
@@ -172,14 +171,20 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
                 <div className="px-6 pb-6 pt-2 border-t border-slate-50 dark:border-slate-800 animate-in slide-in-from-top-2 duration-300">
                   <div className="space-y-1 mt-4">
                     <div className="flex gap-2 mb-4">
-                      <input type="text" placeholder="Novo tópico do edital..." className="flex-1 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 transition-all" value={newTopicTitle} onChange={(e) => setNewTopicTitle(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addTopic(subject.id)} />
+                      <input 
+                        type="text" 
+                        placeholder="Novo tópico do edital..." 
+                        className="flex-1 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 transition-all" 
+                        value={newTopicTitle} 
+                        onChange={(e) => setNewTopicTitle(e.target.value)} 
+                        onKeyPress={(e) => e.key === 'Enter' && addTopic(subject.id)} 
+                      />
                       <button onClick={() => addTopic(subject.id)} className="bg-slate-800 text-white px-6 rounded-xl font-black text-xs hover:bg-slate-700">Adicionar</button>
                     </div>
                     {subject.topics.map(topic => (
                       <div key={topic.id} className="flex items-center gap-3 p-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-xl group transition-all">
                         <button onClick={() => toggleTopic(subject.id, topic.id)} className={`transition-all ${topic.completed ? 'text-emerald-500' : 'text-slate-300 hover:text-slate-400'}`}><CheckCircle size={20} /></button>
                         <span className={`text-sm font-bold flex-1 ${topic.completed ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-200'}`}>{topic.title}</span>
-                        <button onClick={() => deleteTopic(subject.id, topic.id)} className="p-1.5 text-slate-400 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14} /></button>
                       </div>
                     ))}
                   </div>
@@ -191,7 +196,7 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
         {subjects.length === 0 && !loading && (
           <div className="py-20 text-center bg-white dark:bg-slate-900 rounded-[2.5rem] border-2 border-dashed border-slate-200 dark:border-slate-800">
              <BookOpen className="mx-auto mb-4 text-slate-300" size={48} />
-             <p className="text-slate-500 font-bold uppercase text-xs tracking-widest">Nenhuma disciplina cadastrada ainda</p>
+             <p className="text-slate-500 font-bold uppercase text-xs tracking-widest">Inicie o cadastro de matérias</p>
           </div>
         )}
       </div>
