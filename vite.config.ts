@@ -4,7 +4,6 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  root: './',
   define: {
     'process.env.API_KEY': JSON.stringify(process.env.API_KEY || ""),
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || "production")
@@ -12,18 +11,12 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    commonjsOptions: {
-      transformMixedEsModules: true,
-    },
     rollupOptions: {
-      input: {
-        main: './index.html',
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'recharts', 'lucide-react', '@google/genai'],
+        },
       },
-    },
-  },
-  server: {
-    fs: {
-      allow: ['.'],
     },
   },
 })
