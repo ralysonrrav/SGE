@@ -22,15 +22,15 @@ import {
   UserCircle,
   Lock
 } from 'lucide-react';
-import { User, Subject, MockExam, StudyCycle, StudySession, PredefinedEdital } from './types';
-import Login from './components/Login';
-import Disciplinas from './components/Disciplinas';
-import Ciclos from './components/Ciclos';
-import Revisao from './components/Revisao';
-import Simulados from './components/Simulados';
-import Dashboard from './components/Dashboard';
-import Admin from './components/Admin';
-import Profile from './components/Profile';
+import { User, Subject, MockExam, StudyCycle, StudySession, PredefinedEdital } from './types.ts'; // Adicione .ts
+import Login from './components/Login.tsx';           // Adicione .tsx
+import Disciplinas from './components/Disciplinas.tsx'; // Adicione .tsx
+import Ciclos from './components/Ciclos.tsx';           // Adicione .tsx
+import Revisao from './components/Revisao.tsx';         // Adicione .tsx
+import Simulados from './components/Simulados.tsx';     // Adicione .tsx
+import Dashboard from './components/Dashboard.tsx';     // Adicione .tsx
+import Admin from './components/Admin.tsx';             // Adicione .tsx
+import Profile from './components/Profile.tsx';         // Adicione .tsx
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);

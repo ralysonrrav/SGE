@@ -1,12 +1,14 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App.tsx'; // Importação explícita com extensão para o Vite
+// Usamos o caminho relativo explícito com extensão para evitar erros no navegador
+import App from './App.tsx'; 
 
-// O Vite na Vercel precisa encontrar o ID 'root' definido no seu index.html
+// Busca o elemento 'root' definido no seu index.html
 const rootElement = document.getElementById('root');
 
 if (!rootElement) {
-  throw new Error("Não foi possível encontrar o elemento root para montar a aplicação.");
+  // Erro crítico caso o HTML não esteja carregando o div corretamente
+  throw new Error("Erro Crítico: O elemento com id 'root' não foi encontrado no index.html.");
 }
 
 const root = ReactDOM.createRoot(rootElement);
