@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Home, BookOpen, RefreshCcw, BarChart2, LogOut, Menu, X,
-  BrainCircuit, Award, Sun, Moon, Loader2, User as UserIcon
+  BrainCircuit, Award, Sun, Moon, Loader2, User as UserIcon, AlertCircle
 } from 'lucide-react';
 import { User, Subject, MockExam, StudyCycle, StudySession, PredefinedEdital } from './types';
 import { supabase } from './lib/supabase';
@@ -26,6 +26,7 @@ const App: React.FC = () => {
   const [studyLogs, setStudyLogs] = useState<StudySession[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -48,33 +49,18 @@ const App: React.FC = () => {
 
   const fetchUserData = useCallback(async (userId: string) => {
     if (!supabase) return;
-    
-    // Carregamento em paralelo para evitar que uma consulta lenta trave as outras
-    const fetchSubjects = supabase.from('subjects').select('*').eq('user_id', userId).order('created_at', { ascending: true });
-    const fetchMocks = supabase.from('mocks').select('*').eq('user_id', userId).order('date', { ascending: false });
-    const fetchLogs = supabase.from('study_logs').select('*').eq('user_id', userId).order('date', { ascending: false });
-
     try {
+      const fetchSubjects = supabase.from('subjects').select('*').eq('user_id', userId).order('created_at', { ascending: true });
+      const fetchMocks = supabase.from('mocks').select('*').eq('user_id', userId).order('date', { ascending: false });
+      const fetchLogs = supabase.from('study_logs').select('*').eq('user_id', userId).order('date', { ascending: false });
+
       const [resSub, resMock, resLog] = await Promise.all([fetchSubjects, fetchMocks, fetchLogs]);
 
-      if (resSub.data) {
-        setSubjects(resSub.data.map((s, index) => ({
-          ...s,
-          id: String(s.id),
-          topics: Array.isArray(s.topics) ? s.topics : [],
-          color: COLORS[index % COLORS.length]
-        })));
-      }
-
-      if (resMock.data) {
-        setMocks(resMock.data.map(m => ({ ...m, id: String(m.id) })));
-      }
-
-      if (resLog.data) {
-        setStudyLogs(resLog.data.map(l => ({ ...l, id: String(l.id) })));
-      }
+      if (resSub.data) setSubjects(resSub.data.map((s, index) => ({ ...s, id: String(s.id), topics: Array.isArray(s.topics) ? s.topics : [], color: COLORS[index % COLORS.length] })));
+      if (resMock.data) setMocks(resMock.data.map(m => ({ ...m, id: String(m.id) })));
+      if (resLog.data) setStudyLogs(resLog.data.map(l => ({ ...l, id: String(l.id) })));
     } catch (err) {
-      console.warn("Aviso: Falha ao carregar dados remotos. Usando cache local.");
+      console.warn("Falha ao carregar dados remotos.");
     }
   }, []);
 
@@ -87,13 +73,12 @@ const App: React.FC = () => {
         supabase.from('mocks').delete().eq('user_id', user.id),
         supabase.from('study_logs').delete().eq('user_id', user.id)
       ]);
-      
       setSubjects([]);
       setMocks([]);
       setStudyLogs([]);
-      alert("Todos os seus dados foram removidos do banco de dados com sucesso.");
+      alert("Limpeza concluída com sucesso!");
     } catch (err) {
-      alert("Erro ao limpar dados. Tente novamente.");
+      alert("Erro ao limpar dados.");
     } finally {
       setIsLoaded(true);
       setShowProfile(false);
@@ -103,73 +88,44 @@ const App: React.FC = () => {
   useEffect(() => {
     let isMounted = true;
     
-    // Timeout de segurança: Força o app a abrir em no máximo 4 segundos
-    const safetyTimeout = setTimeout(() => {
-      if (isMounted && !isLoaded) {
-        console.warn("Safety timeout atingido: Forçando abertura da interface.");
+    // Força o carregamento após 3 segundos se o banco não responder
+    const safetyTimer = setTimeout(() => {
+      if (isMounted) {
         setIsLoaded(true);
+        setLoadError(true);
       }
-    }, 4000);
+    }, 3500);
 
     const init = async () => {
       try {
-        if (!supabase) { 
-          if (isMounted) setIsLoaded(true); 
-          return; 
-        }
-        
-        const { data: { session } } = await supabase.auth.getSession();
-        
+        if (!supabase) { setIsLoaded(true); return; }
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) throw error;
+
         if (session?.user && isMounted) {
-          const u: User = {
+          setUser({
             id: session.user.id,
             name: session.user.user_metadata?.full_name || 'Usuário',
             email: session.user.email!,
             role: session.user.email === 'ralysonriccelli@gmail.com' ? 'admin' : 'student',
             status: 'active',
             isOnline: true
-          };
-          setUser(u);
-          // Não usamos await aqui para não travar o setIsLoaded(true) se o fetch demorar
-          fetchUserData(session.user.id);
+          });
+          await fetchUserData(session.user.id);
         }
       } catch (err) {
-        console.error("Erro na inicialização:", err);
+        console.error("Erro no carregamento inicial:", err);
       } finally {
-        clearTimeout(safetyTimeout);
-        if (isMounted) setIsLoaded(true);
+        if (isMounted) {
+          clearTimeout(safetyTimer);
+          setIsLoaded(true);
+        }
       }
     };
     
     init();
 
-    const { data: { subscription } } = supabase 
-      ? supabase.auth.onAuthStateChange(async (event, session) => {
-          if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && session?.user && isMounted) {
-            const u: User = { 
-              id: session.user.id, 
-              name: session.user.user_metadata?.full_name || 'Usuário', 
-              email: session.user.email!, 
-              role: session.user.email === 'ralysonriccelli@gmail.com' ? 'admin' : 'student', 
-              status: 'active', 
-              isOnline: true 
-            };
-            setUser(u);
-            fetchUserData(session.user.id);
-          } else if (event === 'SIGNED_OUT' && isMounted) {
-            setUser(null);
-            setSubjects([]);
-            setMocks([]);
-            setStudyLogs([]);
-          }
-        })
-      : { data: { subscription: { unsubscribe: () => {} } } };
-
-    return () => { 
-      isMounted = false; 
-      clearTimeout(safetyTimeout);
-      subscription.unsubscribe(); 
-    };
+    return () => { isMounted = false; clearTimeout(safetyTimer); };
   }, [fetchUserData]);
 
   useEffect(() => {
@@ -181,13 +137,21 @@ const App: React.FC = () => {
 
   if (!isLoaded) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-8 text-center">
         <div className="relative mb-8">
-           <div className="w-16 h-16 border-4 border-indigo-500/20 rounded-full animate-pulse"></div>
-           <Loader2 className="absolute inset-0 animate-spin text-indigo-500" size={64} />
+           <div className="w-20 h-20 border-4 border-indigo-500/10 rounded-full"></div>
+           <Loader2 className="absolute inset-0 animate-spin text-indigo-500" size={80} />
         </div>
-        <h2 className="text-white font-black text-xl mb-2">StudyFlow Pro</h2>
-        <p className="text-slate-500 text-sm font-bold uppercase tracking-widest animate-pulse">Iniciando ambiente de estudos...</p>
+        <h2 className="text-white font-black text-2xl mb-2">StudyFlow Pro</h2>
+        <p className="text-slate-500 text-sm font-bold uppercase tracking-widest animate-pulse mb-8">Sincronizando com a Nuvem...</p>
+        
+        {/* Botão de Bypass se demorar muito */}
+        <button 
+          onClick={() => setIsLoaded(true)}
+          className="px-6 py-3 bg-slate-900 text-slate-400 rounded-2xl text-xs font-black border border-slate-800 hover:text-white transition-all flex items-center gap-2"
+        >
+          <AlertCircle size={14} /> ENTRAR MESMO ASSIM
+        </button>
       </div>
     );
   }
@@ -203,22 +167,14 @@ const App: React.FC = () => {
       case 'ciclos': return <Ciclos user={user} subjects={subjects} setCycle={setCycle} cycle={cycle} />;
       case 'revisao': return <Revisao subjects={subjects} setSubjects={setSubjects} onAddLog={() => {}} />;
       case 'simulados': return <Simulados user={user} mocks={mocks} setMocks={setMocks} subjects={subjects} />;
-      case 'admin_users': return <Admin users={allUsers} setUsers={setAllUsers} editais={editais} setEditais={() => {}} view="users" />;
       default: return <Dashboard subjects={subjects} mocks={mocks} cycle={cycle} studyLogs={studyLogs} weeklyGoal={user.weeklyGoal || 20} onUpdateGoal={() => {}} isDarkMode={isDarkMode} />;
     }
   };
 
   return (
-    <div className="flex h-screen bg-white dark:bg-slate-950 overflow-hidden transition-colors duration-500">
+    <div className="flex h-screen bg-white dark:bg-slate-950 overflow-hidden transition-colors duration-500 font-sans">
       {showProfile && (
-        <Profile 
-          user={user} 
-          onUpdate={(u) => setUser(u)} 
-          onDelete={handleWipeData} 
-          onClose={() => setShowProfile(false)}
-          onExport={() => {}} 
-          onImport={() => {}} 
-        />
+        <Profile user={user} onUpdate={(u) => setUser(u)} onDelete={handleWipeData} onClose={() => setShowProfile(false)} onExport={() => {}} onImport={() => {}} />
       )}
 
       <button className="md:hidden fixed top-6 left-6 z-50 p-3 bg-indigo-600 text-white rounded-2xl shadow-xl" onClick={() => setIsSidebarOpen(!isSidebarOpen)}>
@@ -236,12 +192,12 @@ const App: React.FC = () => {
           </div>
           
           <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
-            <p className="px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 mt-4">Menu Principal</p>
+            <p className="px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 mt-4">Navegação</p>
             {[
-              { id: 'inicio', label: 'Início', icon: <Home size={18} /> },
-              { id: 'disciplinas', label: 'Disciplinas', icon: <BookOpen size={18} /> },
+              { id: 'inicio', label: 'Dashboard', icon: <Home size={18} /> },
+              { id: 'disciplinas', label: 'Edital Vertical', icon: <BookOpen size={18} /> },
               { id: 'ciclos', label: 'Ciclos AI', icon: <BrainCircuit size={18} /> },
-              { id: 'revisao', label: 'Revisão', icon: <RefreshCcw size={18} /> },
+              { id: 'revisao', label: 'Revisões', icon: <RefreshCcw size={18} /> },
               { id: 'simulados', label: 'Simulados', icon: <BarChart2 size={18} /> },
             ].map((item) => (
               <button key={item.id} onClick={() => { setCurrentPage(item.id); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-bold transition-all ${currentPage === item.id ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'}`}>
@@ -252,7 +208,7 @@ const App: React.FC = () => {
 
           <div className="p-6 border-t border-slate-200 dark:border-slate-800 space-y-3">
              <button onClick={() => setShowProfile(true)} className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 dark:text-slate-400 font-bold text-xs hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-all">
-                <UserIcon size={18} /> Perfil
+                <UserIcon size={18} /> Minha Conta
              </button>
              <div className="bg-slate-200 dark:bg-slate-950 p-1 rounded-2xl flex items-center">
                 <button onClick={() => setIsDarkMode(false)} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl transition-all ${!isDarkMode ? 'bg-white text-indigo-600 shadow-md font-black' : 'text-slate-400'}`}><Sun size={16} /></button>
@@ -264,6 +220,11 @@ const App: React.FC = () => {
       </aside>
 
       <main className="flex-1 md:ml-72 overflow-y-auto bg-white dark:bg-slate-950 transition-colors">
+        {loadError && (
+          <div className="bg-amber-50 dark:bg-amber-900/20 p-4 border-b border-amber-100 dark:border-amber-900/30 flex items-center justify-center gap-3 text-amber-700 dark:text-amber-400 text-xs font-bold transition-all">
+            <AlertCircle size={14} /> Modo de Segurança Ativado: Conexão com o banco lenta ou indisponível.
+          </div>
+        )}
         <div className="max-w-6xl mx-auto p-6 md:p-12">{renderPage()}</div>
       </main>
     </div>
