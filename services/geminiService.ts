@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
-import { Subject } from "./types.ts"; // Ajustado para './types.ts' caso o arquivo esteja na mesma pasta raiz
+import { Subject } from "./types.ts"; // Use ./ se o arquivo estiver na mesma pasta
 
 export const generateStudyCycle = async (
   board: string,
