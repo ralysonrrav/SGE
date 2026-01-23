@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Home, 
   BookOpen, 
@@ -9,9 +9,6 @@ import {
   LogOut, 
   Menu, 
   X,
-  Plus,
-  Trash2,
-  CheckCircle2,
   BrainCircuit,
   Award,
   Sun,
@@ -19,10 +16,12 @@ import {
   ShieldAlert,
   Users,
   Database,
-  UserCircle,
-  Lock
+  Zap,
+  Target,
+  AlertCircle
 } from 'lucide-react';
 import { User, Subject, MockExam, StudyCycle, StudySession, PredefinedEdital } from './types';
+import { supabase } from './lib/supabase';
 import Login from './components/Login';
 import Disciplinas from './components/Disciplinas';
 import Ciclos from './components/Ciclos';
@@ -39,7 +38,6 @@ const App: React.FC = () => {
   const [mocks, setMocks] = useState<MockExam[]>([]);
   const [cycle, setCycle] = useState<StudyCycle | null>(null);
   const [studyLogs, setStudyLogs] = useState<StudySession[]>([]);
-  
   const [predefinedEditais, setPredefinedEditais] = useState<PredefinedEdital[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
 
@@ -47,8 +45,6 @@ const App: React.FC = () => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   
-  const firstLoadDone = useRef(false);
-
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('theme');
     if (saved) return saved === 'dark';
@@ -66,130 +62,130 @@ const App: React.FC = () => {
     }
   }, [isDarkMode]);
 
-  // CARREGAMENTO INICIAL E SEEDING
   useEffect(() => {
-    const loadData = () => {
-      try {
-        const savedAllUsersStr = localStorage.getItem('global_users');
-        let currentUsers: User[] = savedAllUsersStr ? JSON.parse(savedAllUsersStr) : [];
-
-        // Seed Admin Master
-        const adminExists = currentUsers.find(u => u.email.toLowerCase() === 'admin@studyflow.com');
-        if (!adminExists) {
-          currentUsers.push({
-            id: 'admin_master',
-            name: 'Administrador Master',
-            email: 'admin@studyflow.com',
-            password: 'admin',
-            role: 'admin',
-            status: 'active',
-            isOnline: false,
-            lastAccess: new Date().toISOString()
-          });
-        }
-
-        // Seed Usuário Padrão solicitado
-        const defaultUserEmail = 'ralysonriccelli@gmail.com';
-        const defaultUserExists = currentUsers.find(u => u.email.toLowerCase() === defaultUserEmail.toLowerCase());
-        if (!defaultUserExists) {
-          currentUsers.push({
-            id: 'user_default_1',
-            name: 'Ralyson Riccelli',
-            email: defaultUserEmail,
-            password: '123456',
-            role: 'student',
-            status: 'active',
-            isOnline: false,
-            lastAccess: new Date().toISOString()
-          });
-        }
-
-        setAllUsers(currentUsers);
-        localStorage.setItem('global_users', JSON.stringify(currentUsers));
-
-        const savedEditais = localStorage.getItem('global_editais');
-        if (savedEditais) setPredefinedEditais(JSON.parse(savedEditais));
-
-        const savedUser = localStorage.getItem('user');
-        if (savedUser) {
-          const parsedUser = JSON.parse(savedUser);
-          const globalUser = currentUsers.find((u: User) => u.id === parsedUser.id);
-          
-          if (globalUser && globalUser.status === 'active') {
-            setUser({ ...parsedUser, isOnline: true });
-            
-            const sSubs = localStorage.getItem(`subjects_${parsedUser.id}`);
-            if (sSubs) setSubjects(JSON.parse(sSubs));
-            
-            const sMocks = localStorage.getItem(`mocks_${parsedUser.id}`);
-            if (sMocks) setMocks(JSON.parse(sMocks));
-            
-            const sCycle = localStorage.getItem(`cycle_${parsedUser.id}`);
-            if (sCycle) setCycle(JSON.parse(sCycle));
-            
-            const sLogs = localStorage.getItem(`logs_${parsedUser.id}`);
-            if (sLogs) setStudyLogs(JSON.parse(sLogs));
-          }
-        }
-      } catch (error) {
-        console.error("Erro no carregamento:", error);
-      } finally {
+    const checkAuth = async () => {
+      if (!supabase) {
         setIsLoaded(true);
-        // Pequeno delay para garantir que o estado do React estabilizou
-        setTimeout(() => { firstLoadDone.current = true; }, 150);
+        return;
       }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+
+        if (profile) {
+          const userData: User = {
+            id: profile.id,
+            name: profile.name,
+            email: session.user.email!,
+            role: profile.role,
+            status: profile.status,
+            isOnline: true,
+            weeklyGoal: profile.weekly_goal || 20
+          };
+          setUser(userData);
+          fetchUserData(userData.id);
+        }
+      }
+      setIsLoaded(true);
     };
-    loadData();
+
+    checkAuth();
+
+    if (supabase) {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+        if (session?.user) {
+          checkAuth();
+        } else {
+          setUser(null);
+          setSubjects([]);
+          setMocks([]);
+          setStudyLogs([]);
+        }
+      });
+      return () => subscription.unsubscribe();
+    }
   }, []);
 
-  // SALVAMENTO AUTOMÁTICO
-  useEffect(() => {
-    if (!isLoaded || !firstLoadDone.current) return;
+  const fetchUserData = async (userId: string) => {
+    if (!supabase) return;
 
-    try {
-      if (user) {
-        localStorage.setItem('user', JSON.stringify(user));
-        if (user.role !== 'admin') {
-          localStorage.setItem(`subjects_${user.id}`, JSON.stringify(subjects));
-          localStorage.setItem(`mocks_${user.id}`, JSON.stringify(mocks));
-          localStorage.setItem(`logs_${user.id}`, JSON.stringify(studyLogs));
-          if (cycle) localStorage.setItem(`cycle_${user.id}`, JSON.stringify(cycle));
-        }
-      }
-      localStorage.setItem('global_editais', JSON.stringify(predefinedEditais));
-      localStorage.setItem('global_users', JSON.stringify(allUsers));
-    } catch (error) {
-      console.error("Erro ao salvar dados no LocalStorage:", error);
-    }
-  }, [subjects, mocks, cycle, user, studyLogs, predefinedEditais, allUsers, isLoaded]);
+    const { data: subData } = await supabase
+      .from('subjects')
+      .select('*, topics(*)')
+      .eq('user_id', userId);
+    
+    if (subData) setSubjects(subData);
 
-  const handleUpdateUser = (updatedUser: User) => {
+    const { data: mockData } = await supabase
+      .from('mock_exams')
+      .select('*')
+      .eq('user_id', userId);
+    
+    if (mockData) setMocks(mockData);
+
+    const { data: logData } = await supabase
+      .from('study_logs')
+      .select('*')
+      .eq('user_id', userId);
+    
+    if (logData) setStudyLogs(logData);
+
+    const { data: cycleData } = await supabase
+      .from('study_cycles')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+    
+    if (cycleData) setCycle(cycleData);
+  };
+
+  const handleUpdateUser = async (updatedUser: User) => {
     setUser(updatedUser);
-    setAllUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+    if (!supabase) return;
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ 
+        name: updatedUser.name, 
+        weekly_goal: updatedUser.weeklyGoal 
+      })
+      .eq('id', updatedUser.id);
+    
+    if (error) console.error("Erro ao atualizar perfil:", error);
   };
 
-  const handleLogin = (u: User) => {
-    setUser({ ...u, isOnline: true });
-    setAllUsers(prev => prev.map(p => p.id === u.id ? { ...p, lastAccess: new Date().toISOString(), isOnline: true } : p));
+  const handleLogout = async () => {
+    if (supabase) await supabase.auth.signOut();
+    setUser(null);
   };
 
-  const handleRegister = (newUser: User) => {
-    setAllUsers(prev => [...prev, newUser]);
-    handleLogin(newUser);
-  };
+  if (!isLoaded) return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+      <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-600 border-t-transparent"></div>
+    </div>
+  );
 
-  const handleLogout = () => {
-    if (user) {
-      setAllUsers(prev => prev.map(p => p.id === user.id ? { ...p, isOnline: false } : p));
-      setUser(null);
-      localStorage.removeItem('user');
-    }
-  };
-
-  if (!isLoaded) return null;
+  if (!supabase) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-6">
+        <div className="max-w-md w-full bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] shadow-2xl border border-rose-100 text-center">
+          <AlertCircle size={48} className="text-rose-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-black text-slate-900 dark:text-slate-100">Erro de Conexão</h2>
+          <p className="text-slate-500 mt-4 font-medium">O banco de dados (Supabase) não foi configurado corretamente através das variáveis de ambiente.</p>
+          <p className="text-xs text-slate-400 mt-6 uppercase font-black tracking-widest">Verifique o arquivo .env ou segredos da Vercel</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!user) {
-    return <Login users={allUsers} onLogin={handleLogin} onRegister={handleRegister} />;
+    return <Login users={[]} onLogin={() => {}} onRegister={() => {}} />;
   }
 
   const renderPage = () => {
@@ -216,14 +212,20 @@ const App: React.FC = () => {
         <Disciplinas 
           subjects={subjects} setSubjects={setSubjects} 
           predefinedEditais={predefinedEditais}
-          onAddLog={(minutes, topicId, subjectId) => setStudyLogs(prev => [...prev, { id: Date.now().toString(), minutes, topicId, subjectId, date: new Date().toISOString(), type: 'estudo' }])}
+          onAddLog={(minutes, topicId, subjectId) => {
+            const newLog: StudySession = { id: Date.now().toString(), minutes, topicId, subjectId, date: new Date().toISOString(), type: 'estudo' };
+            setStudyLogs(prev => [...prev, newLog]);
+          }}
         />
       );
       case 'ciclos': return <Ciclos subjects={subjects} setCycle={setCycle} cycle={cycle} />;
       case 'revisao': return (
         <Revisao 
           subjects={subjects} setSubjects={setSubjects} 
-          onAddLog={(minutes, topicId, subjectId) => setStudyLogs(prev => [...prev, { id: Date.now().toString(), minutes, topicId, subjectId, date: new Date().toISOString(), type: 'revisao' }])}
+          onAddLog={(minutes, topicId, subjectId) => {
+            const newLog: StudySession = { id: Date.now().toString(), minutes, topicId, subjectId, date: new Date().toISOString(), type: 'revisao' };
+            setStudyLogs(prev => [...prev, newLog]);
+          }}
         />
       );
       case 'simulados': return <Simulados mocks={mocks} setMocks={setMocks} subjects={subjects} />;

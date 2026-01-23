@@ -6,6 +6,8 @@ export default defineConfig({
   plugins: [react()],
   define: {
     'process.env.API_KEY': JSON.stringify(process.env.API_KEY || ""),
+    'process.env.SUPABASE_URL': JSON.stringify(process.env.SUPABASE_URL || ""),
+    'process.env.SUPABASE_ANON_KEY': JSON.stringify(process.env.SUPABASE_ANON_KEY || ""),
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || "production")
   },
   build: {
@@ -14,7 +16,7 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          vendor: ['react', 'react-dom', 'recharts', 'lucide-react', '@google/genai'],
+          vendor: ['react', 'react-dom', 'recharts', 'lucide-react', '@google/genai', '@supabase/supabase-js'],
         },
       },
     },

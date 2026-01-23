@@ -1,7 +1,8 @@
 
 import React, { useState } from 'react';
 import { User } from '../types';
-import { ShieldCheck, Award, Lock, Mail, User as UserIcon, AlertCircle, UserPlus, ShieldAlert, Info } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { ShieldCheck, Award, Lock, Mail, User as UserIcon, Info, AlertTriangle } from 'lucide-react';
 
 interface LoginProps {
   users: User[];
@@ -9,61 +10,57 @@ interface LoginProps {
   onRegister: (user: User) => void;
 }
 
-const Login: React.FC<LoginProps> = ({ users, onLogin, onRegister }) => {
+const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [isRegistering, setIsRegistering] = useState(false);
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<{ msg: string; type: 'error' | 'warning' | 'info' } | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    if (!email || !password) return;
+    if (!supabase) {
+      setError({ msg: "Banco de dados não configurado.", type: 'error' });
+      return;
+    }
+
+    setLoading(true);
 
     if (isRegistering) {
       if (password !== confirmPassword) {
         setError({ msg: "As senhas não coincidem!", type: 'error' });
+        setLoading(false);
         return;
       }
-      if (users.find(u => u.email.toLowerCase() === email.toLowerCase())) {
-        setError({ msg: "Este e-mail já está cadastrado.", type: 'warning' });
-        return;
-      }
-
-      const newUser: User = {
-        id: 'user_' + Date.now(),
-        name,
-        email,
-        password, 
-        role: 'student',
-        status: 'active',
-        isOnline: false,
-        lastAccess: new Date().toISOString()
-      };
       
-      onRegister(newUser);
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { full_name: name }
+        }
+      });
+
+      if (signUpError) {
+        setError({ msg: signUpError.message, type: 'error' });
+      } else if (data.user) {
+        setError({ msg: "Cadastro realizado! Verifique seu e-mail.", type: 'info' });
+      }
     } else {
-      const foundUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-      if (!foundUser) {
-        setError({ msg: "Usuário não encontrado. Cadastre-se!", type: 'info' });
-        return;
-      }
-
-      if (foundUser.status === 'blocked') {
-        setError({ msg: "CONTA BLOQUEADA!", type: 'error' });
-        return;
-      }
-
-      if (foundUser.password === password) {
-        onLogin(foundUser);
-      } else {
-        setError({ msg: "Senha incorreta!", type: 'error' });
+      if (signInError) {
+        setError({ msg: "E-mail ou senha incorretos.", type: 'error' });
       }
     }
+    setLoading(false);
   };
 
   return (
@@ -78,6 +75,13 @@ const Login: React.FC<LoginProps> = ({ users, onLogin, onRegister }) => {
           </h1>
           <p className="text-slate-500 dark:text-slate-400 mt-2 font-medium">Sua jornada para a aprovação.</p>
         </div>
+
+        {!supabase && (
+          <div className="mb-6 p-4 bg-rose-50 border border-rose-100 rounded-2xl flex items-center gap-3 text-rose-600">
+            <AlertTriangle size={20} className="shrink-0" />
+            <p className="text-[10px] font-black uppercase">Database Offline: Verifique as credenciais.</p>
+          </div>
+        )}
 
         {error && (
           <div className={`mb-6 p-4 rounded-2xl flex items-start gap-3 border ${
@@ -111,8 +115,12 @@ const Login: React.FC<LoginProps> = ({ users, onLogin, onRegister }) => {
               <input type="password" required className="w-full pl-12 pr-4 py-4 rounded-2xl border border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-indigo-500 bg-slate-50 dark:bg-slate-950 dark:text-white outline-none font-bold" placeholder="Confirmar Senha" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
             </div>
           )}
-          <button type="submit" className="w-full text-white font-black py-5 rounded-2xl transition-all shadow-xl bg-indigo-600 hover:bg-indigo-700">
-            {isRegistering ? 'CRIAR CONTA' : 'ACESSAR AGORA'}
+          <button 
+            type="submit" 
+            disabled={loading || !supabase}
+            className={`w-full text-white font-black py-5 rounded-2xl transition-all shadow-xl bg-indigo-600 hover:bg-indigo-700 ${(loading || !supabase) ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            {loading ? 'CARREGANDO...' : (isRegistering ? 'CRIAR CONTA' : 'ACESSAR AGORA')}
           </button>
         </form>
 
