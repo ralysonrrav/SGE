@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Subject, MockExam, StudyCycle, StudySession } from '../types';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -20,6 +20,12 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({ subjects, mocks, cycle, studyLogs, weeklyGoal, onUpdateGoal, isDarkMode }) => {
   const [isEditingGoal, setIsEditingGoal] = useState(false);
   const [tempGoal, setTempGoal] = useState(weeklyGoal);
+  const [isMounted, setIsMounted] = useState(false);
+
+  // Garante que o gráfico só tente medir o container após a montagem completa no DOM
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const totalMinutes = subjects.reduce((acc, s) => acc + s.topics.reduce((tAcc, t) => tAcc + (t.studyTimeMinutes || 0), 0), 0);
   const totalHours = Math.floor(totalMinutes / 60);
@@ -61,7 +67,7 @@ const Dashboard: React.FC<DashboardProps> = ({ subjects, mocks, cycle, studyLogs
     <div className="space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700 pb-24">
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
-          <h2 className="text-4xl font-black text-slate-900 dark:text-slate-100 tracking-tight">Performance Hub</h2>
+          <h2 className="text-4xl font-black text-slate-900 dark:text-slate-100 tracking-tight text-balance">Performance Hub</h2>
           <p className="text-slate-500 dark:text-slate-400 font-medium mt-1">Visão geral do seu progresso rumo à aprovação.</p>
         </div>
         <div className="flex items-center gap-4 bg-white dark:bg-slate-900 px-6 py-3 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
@@ -122,22 +128,24 @@ const Dashboard: React.FC<DashboardProps> = ({ subjects, mocks, cycle, studyLogs
 
         <div className="bg-white dark:bg-slate-900 p-10 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col items-center justify-center text-center">
             <h3 className="text-xl font-black text-slate-900 dark:text-slate-100 mb-8">Edital Concluído</h3>
-            <div className="w-full h-52 flex items-center justify-center" style={{ minHeight: '200px' }}>
-              <ResponsiveContainer width="100%" height="100%" debounce={50}>
-                <PieChart>
-                  <Pie
-                    data={[
-                      { name: 'Concluído', value: completedTopics || 0.0001 },
-                      { name: 'Pendente', value: Math.max(0.0001, totalTopics - completedTopics) }
-                    ]}
-                    cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value"
-                  >
-                    <Cell fill="#4f46e5" stroke="none" />
-                    <Cell fill={isDarkMode ? '#1e293b' : '#f8fafc'} stroke="none" />
-                  </Pie>
-                  <Tooltip contentStyle={{ backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, borderRadius: '16px' }} />
-                </PieChart>
-              </ResponsiveContainer>
+            <div className="w-full h-[240px] relative block overflow-hidden">
+              {isMounted && (
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={50}>
+                  <PieChart>
+                    <Pie
+                      data={[
+                        { name: 'Concluído', value: completedTopics || 0.0001 },
+                        { name: 'Pendente', value: Math.max(0.0001, totalTopics - completedTopics) }
+                      ]}
+                      cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value"
+                    >
+                      <Cell fill="#4f46e5" stroke="none" />
+                      <Cell fill={isDarkMode ? '#1e293b' : '#f8fafc'} stroke="none" />
+                    </Pie>
+                    <Tooltip contentStyle={{ backgroundColor: chartTheme.tooltipBg, border: `1px solid ${chartTheme.tooltipBorder}`, borderRadius: '16px' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
             </div>
             <div className="mt-8">
               <p className="text-4xl font-black text-slate-900 dark:text-slate-100">{progressPercent}%</p>
@@ -149,18 +157,18 @@ const Dashboard: React.FC<DashboardProps> = ({ subjects, mocks, cycle, studyLogs
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div className="bg-white dark:bg-slate-900 p-10 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-sm">
           <h3 className="text-xl font-black text-slate-900 dark:text-slate-100 mb-8">Evolução em Simulados (%)</h3>
-          <div className="w-full h-72" style={{ minHeight: '280px' }}>
-            {mockData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%" debounce={50}>
-                <BarChart data={mockData}>
+          <div className="w-full h-[320px] relative block overflow-hidden">
+            {isMounted && mockData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={50}>
+                <BarChart data={mockData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartTheme.grid} />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: chartTheme.text, fontSize: 10, fontWeight: 'bold' }} />
                   <YAxis axisLine={false} tickLine={false} tick={{ fill: chartTheme.text, fontSize: 10, fontWeight: 'bold' }} />
-                  <Tooltip contentStyle={{ borderRadius: '16px', border: `1px solid ${chartTheme.tooltipBorder}`, backgroundColor: chartTheme.tooltipBg }} />
+                  <Tooltip cursor={{ fill: isDarkMode ? '#1e293b' : '#f8fafc' }} contentStyle={{ borderRadius: '16px', border: `1px solid ${chartTheme.tooltipBorder}`, backgroundColor: chartTheme.tooltipBg }} />
                   <Bar dataKey="acerto" fill="#4f46e5" radius={[6, 6, 0, 0]} barSize={40} />
                 </BarChart>
               </ResponsiveContainer>
-            ) : (
+            ) : !isMounted ? null : (
               <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-3">
                 <BarChart2 size={56} className="opacity-10" />
                 <p className="font-bold">Nenhum simulado registrado.</p>
@@ -169,7 +177,7 @@ const Dashboard: React.FC<DashboardProps> = ({ subjects, mocks, cycle, studyLogs
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 p-10 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-sm overflow-y-auto max-h-[420px]">
+        <div className="bg-white dark:bg-slate-900 p-10 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-sm overflow-y-auto max-h-[460px]">
           <h3 className="text-xl font-black text-slate-900 dark:text-slate-100 mb-8">Domínio por Disciplina</h3>
           <div className="space-y-8">
             {subjectProgressData.length > 0 ? (
