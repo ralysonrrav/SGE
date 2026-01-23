@@ -5,15 +5,14 @@ export interface User {
   email: string;
   password?: string;
   role: 'admin' | 'student' | 'visitor';
-  status: 'active' | 'blocked';
-  isOnline: boolean;
+  status: 'active' | 'blocked'; // Ativo ou Bloqueado
+  isOnline: boolean; // Status de conexão em tempo real
   lastAccess?: string;
   weeklyGoal?: number;
 }
 
 export interface StudySession {
   id: string;
-  user_id: string;
   topicId: string;
   subjectId: string;
   minutes: number;
@@ -35,24 +34,23 @@ export interface Topic {
 
 export interface Subject {
   id: string;
-  user_id?: string;
   name: string;
   topics: Topic[];
   color: string;
 }
 
+// Novo: Modelo de Edital Pré-cadastrado pelo Admin
 export interface PredefinedEdital {
   id: string;
   name: string;
-  organization: string;
-  examDate?: string;
+  organization: string; // Ex: Polícia Federal, TJ-SP
+  examDate?: string; // Data prevista da prova
   subjects: Subject[];
   lastUpdated: string;
 }
 
 export interface MockExam {
   id: string;
-  user_id: string;
   title: string;
   date: string;
   score: number;
@@ -62,7 +60,6 @@ export interface MockExam {
 
 export interface StudyCycle {
   id: string;
-  user_id: string;
   board: string;
   examDate: string;
   hoursPerDay: number;

@@ -1,7 +1,7 @@
 
 import React, { useState, useRef } from 'react';
 import { User } from '../types';
-import { X, User as UserIcon, Mail, Lock, Trash2, ShieldCheck, AlertTriangle, Download, Upload, ShieldAlert, Database } from 'lucide-react';
+import { X, User as UserIcon, Mail, Lock, Trash2, ShieldCheck, AlertTriangle, Download, Upload, ShieldAlert } from 'lucide-react';
 
 interface ProfileProps {
   user: User;
@@ -135,7 +135,7 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onDelete, onClose, on
                 </div>
 
                 <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
-                  Seus dados estão salvos neste navegador e sincronizados com o banco de dados remoto.
+                  Seus dados estão salvos neste navegador. Para garantir total segurança, baixe um backup manual regularmente.
                 </p>
 
                 <div className="grid grid-cols-1 gap-3">
@@ -163,29 +163,24 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onDelete, onClose, on
                 </div>
               </div>
 
-              <div className="flex flex-col items-center gap-4 pt-6">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Zona de Risco</p>
-                
-                <button 
-                  onClick={() => {
-                    if(confirm("ATENÇÃO: Isso apagará todas as disciplinas, simulados e logs do seu usuário no banco de dados. Esta ação não pode ser desfeita. Continuar?")) {
-                      onDelete();
-                    }
-                  }}
-                  className="w-full flex items-center justify-center gap-2 text-rose-600 font-black text-xs hover:bg-rose-50 dark:hover:bg-rose-900/10 px-6 py-4 rounded-2xl transition-all border border-rose-100 dark:border-rose-900/30"
-                >
-                  <Database size={16} /> LIMPAR TODO O BANCO DE DADOS
-                </button>
-
-                {user.role !== 'admin' && (
+              {/* TRAVA DE SEGURANÇA: Administrador não pode se auto-excluir */}
+              {user.role !== 'admin' ? (
+                <div className="flex flex-col items-center gap-4 pt-6">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Zona de Risco</p>
                   <button 
                     onClick={() => setShowDeleteConfirm(true)}
-                    className="flex items-center gap-2 text-slate-400 font-black text-[10px] hover:text-rose-500 transition-all"
+                    className="flex items-center gap-2 text-rose-500 font-black text-xs hover:bg-rose-50 dark:hover:bg-rose-900/10 px-6 py-3 rounded-2xl transition-all border border-transparent hover:border-rose-100"
                   >
-                    <Trash2 size={14} /> EXCLUIR CONTA DEFINITIVAMENTE
+                    <Trash2 size={16} /> EXCLUIR CONTA PERMANENTEMENTE
                   </button>
-                )}
-              </div>
+                </div>
+              ) : (
+                <div className="pt-6 text-center">
+                   <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-slate-400 font-bold text-[10px] uppercase">
+                     <ShieldCheck size={14} /> Conta de Administrador Protegida
+                   </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -199,7 +194,7 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onDelete, onClose, on
             </div>
             <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 mb-4">Ação Irreversível</h3>
             <p className="text-slate-500 dark:text-slate-400 mb-8 font-medium">
-              Tem certeza que deseja excluir sua conta? Todos os seus ciclos, estatísticas e disciplinas serão removidos permanentemente deste dispositivo e do servidor.
+              Tem certeza que deseja excluir sua conta? Todos os seus ciclos, estatísticas e disciplinas serão removidos permanentemente deste dispositivo.
             </p>
             <div className="flex flex-col gap-3">
               <button onClick={onDelete} className="w-full bg-rose-500 text-white font-black py-4 rounded-2xl hover:bg-rose-600 transition-all shadow-lg shadow-rose-100 dark:shadow-none">SIM, EXCLUIR TUDO</button>

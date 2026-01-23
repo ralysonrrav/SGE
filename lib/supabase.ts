@@ -1,40 +1,42 @@
 
 import { createClient } from '@supabase/supabase-js';
 
+// Valores fornecidos pelo usuário
 const DEFAULT_URL = 'https://kubyooesnofaswpfexla.supabase.co';
 const DEFAULT_KEY = 'sb_publishable_YIs9MLAF0rI3i7jDZBlllQ_SVrkY6N6';
 
-// Detecção segura de ambiente
-const getEnv = (key: string) => {
-  try {
-    return process.env[key] || process.env[`VITE_${key}`];
-  } catch {
-    return null;
-  }
-};
+// Busca das variáveis de ambiente com fallback para os valores fixos
+let supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_URL;
+let supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || DEFAULT_KEY;
 
-let supabaseUrl = getEnv('SUPABASE_URL') || DEFAULT_URL;
-let supabaseAnonKey = getEnv('SUPABASE_ANON_KEY') || DEFAULT_KEY;
+/**
+ * Lógica de auto-correção:
+ * Se o usuário inverteu os valores no painel da Vercel (colocou a Key na variável da URL),
+ * nós detectamos e trocamos para garantir que o app não quebre.
+ */
+if (supabaseUrl.startsWith('sb_') && supabaseAnonKey.startsWith('http')) {
+  console.log("Supabase (LOG): Detectada inversão de chaves. Corrigindo automaticamente...");
+  const temp = supabaseUrl;
+  supabaseUrl = supabaseAnonKey;
+  supabaseAnonKey = temp;
+}
 
-// Fallback se as strings vierem vazias do process.env
-if (!supabaseUrl) supabaseUrl = DEFAULT_URL;
-if (!supabaseAnonKey) supabaseAnonKey = DEFAULT_KEY;
-
+// Validação final antes de criar o cliente
 const isValidUrl = (url: string) => url && url.startsWith('http');
 
-export const supabase = isValidUrl(supabaseUrl) 
+export const supabase = (isValidUrl(supabaseUrl) && supabaseAnonKey) 
   ? createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
-        persistSession: true,
         autoRefreshToken: true,
-        detectSessionInUrl: true
-      },
-      global: {
-        headers: { 'x-application-name': 'studyflow' }
+        persistSession: true,
+        detectSessionInUrl: true,
+        flowType: 'pkce'
       }
     }) 
   : null;
 
 if (!supabase) {
-  console.warn("Supabase: Falha ao inicializar cliente. Verifique URL/Key.");
+  console.error("ERRO CRÍTICO: Não foi possível inicializar o cliente Supabase. Verifique a URL:", supabaseUrl);
+} else {
+  console.log("Supabase (LOG): Cliente autenticado com sucesso em", supabaseUrl);
 }
