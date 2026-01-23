@@ -1,6 +1,5 @@
-
-import { GoogleGenAI, Type } from "@google/genai";
-import { Subject } from "../types";
+import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+import { Subject } from "../types.ts"; // Lembre-se da extensão .ts se necessário
 
 export const generateStudyCycle = async (
   board: string,
@@ -8,9 +7,10 @@ export const generateStudyCycle = async (
   hoursPerDay: number,
   subjects: Subject[]
 ) => {
-  // Fixed: Always use the named parameter for apiKey initialization.
-  const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
+  // Inicialização correta usando a variável de ambiente configurada na Vercel
+  const genAI = new GoogleGenerativeAI(import.meta.env.VITE_API_KEY);
   
+  // Resumo das disciplinas para o prompt
   const subjectsSummary = subjects.map(s => `${s.name} (${s.topics.length} tópicos)`).join(", ");
   
   const prompt = `
@@ -20,7 +20,7 @@ export const generateStudyCycle = async (
     
     Aplique o Teorema de Pareto (80/20): identifique quais disciplinas costumam ser mais cobradas pela banca "${board}" e dedique mais tempo a elas.
     
-    Retorne um JSON seguindo esta estrutura:
+    Retorne um JSON seguindo esta estrutura exata:
     {
       "schedule": [
         {
@@ -35,28 +35,28 @@ export const generateStudyCycle = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    // Configuração do modelo com Schema de Resposta para garantir o JSON correto
+    const model = genAI.getGenerativeModel({
       model: "gemini-1.5-flash",
-      contents: prompt,
-      config: {
+      generationConfig: {
         responseMimeType: "application/json",
         responseSchema: {
-          type: Type.OBJECT,
+          type: SchemaType.OBJECT,
           properties: {
             schedule: {
-              type: Type.ARRAY,
+              type: SchemaType.ARRAY,
               items: {
-                type: Type.OBJECT,
+                type: SchemaType.OBJECT,
                 properties: {
-                  day: { type: Type.STRING },
+                  day: { type: SchemaType.STRING },
                   sessions: {
-                    type: Type.ARRAY,
+                    type: SchemaType.ARRAY,
                     items: {
-                      type: Type.OBJECT,
+                      type: SchemaType.OBJECT,
                       properties: {
-                        subjectName: { type: Type.STRING },
-                        duration: { type: Type.NUMBER },
-                        focus: { type: Type.STRING }
+                        subjectName: { type: SchemaType.STRING },
+                        duration: { type: SchemaType.NUMBER },
+                        focus: { type: SchemaType.STRING }
                       },
                       required: ["subjectName", "duration", "focus"]
                     }
@@ -70,14 +70,18 @@ export const generateStudyCycle = async (
       }
     });
 
-    // Fixed: Accessed .text property directly and handled potential undefined value.
-    const jsonStr = response.text;
-    if (!jsonStr) {
-      throw new Error("Empty response from Gemini API");
+    // Chamada corrigida para o SDK v1+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text(); // O método .text() é assíncrono agora
+
+    if (!text) {
+      throw new Error("Resposta vazia da API do Gemini");
     }
-    return JSON.parse(jsonStr.trim());
+
+    return JSON.parse(text.trim());
   } catch (error) {
-    console.error("Erro na geração do ciclo:", error);
+    console.error("Erro detalhado na geração do ciclo:", error);
     throw error;
   }
 };
