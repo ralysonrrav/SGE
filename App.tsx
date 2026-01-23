@@ -47,7 +47,6 @@ const App: React.FC = () => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   
-  // Ref para evitar que o salvamento automático ocorra antes do carregamento inicial
   const firstLoadDone = useRef(false);
 
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -69,136 +68,100 @@ const App: React.FC = () => {
 
   // CARREGAMENTO INICIAL E SEEDING
   useEffect(() => {
-    try {
-      const savedUser = localStorage.getItem('user');
-      const savedEditais = localStorage.getItem('global_editais');
-      const savedAllUsersStr = localStorage.getItem('global_users');
-      
-      let currentUsers: User[] = savedAllUsersStr ? JSON.parse(savedAllUsersStr) : [];
+    const loadData = () => {
+      try {
+        const savedAllUsersStr = localStorage.getItem('global_users');
+        let currentUsers: User[] = savedAllUsersStr ? JSON.parse(savedAllUsersStr) : [];
 
-      // Garantir que o Admin Master sempre exista
-      const adminExists = currentUsers.find(u => u.email.toLowerCase() === 'admin@studyflow.com');
-      if (!adminExists) {
-        const masterAdmin: User = {
-          id: 'admin_master',
-          name: 'Administrador Master',
-          email: 'admin@studyflow.com',
-          password: 'admin',
-          role: 'admin',
-          status: 'active',
-          isOnline: false,
-          lastAccess: new Date().toISOString()
-        };
-        currentUsers = [...currentUsers, masterAdmin];
-        localStorage.setItem('global_users', JSON.stringify(currentUsers));
-      }
-      setAllUsers(currentUsers);
-
-      if (savedEditais) setPredefinedEditais(JSON.parse(savedEditais));
-
-      if (savedUser) {
-        const parsedUser = JSON.parse(savedUser);
-        const globalUser = currentUsers.find((u: User) => u.id === parsedUser.id);
-        
-        if (globalUser && globalUser.status === 'active') {
-          setUser({ ...parsedUser, isOnline: true });
-          
-          const sSubs = localStorage.getItem(`subjects_${parsedUser.id}`);
-          if (sSubs) setSubjects(JSON.parse(sSubs));
-          
-          const sMocks = localStorage.getItem(`mocks_${parsedUser.id}`);
-          if (sMocks) setMocks(JSON.parse(sMocks));
-          
-          const sCycle = localStorage.getItem(`cycle_${parsedUser.id}`);
-          if (sCycle) setCycle(JSON.parse(sCycle));
-          
-          const sLogs = localStorage.getItem(`logs_${parsedUser.id}`);
-          if (sLogs) setStudyLogs(JSON.parse(sLogs));
+        // Seed Admin Master
+        const adminExists = currentUsers.find(u => u.email.toLowerCase() === 'admin@studyflow.com');
+        if (!adminExists) {
+          currentUsers.push({
+            id: 'admin_master',
+            name: 'Administrador Master',
+            email: 'admin@studyflow.com',
+            password: 'admin',
+            role: 'admin',
+            status: 'active',
+            isOnline: false,
+            lastAccess: new Date().toISOString()
+          });
         }
+
+        // Seed Usuário Padrão solicitado
+        const defaultUserEmail = 'ralysonriccelli@gmail.com';
+        const defaultUserExists = currentUsers.find(u => u.email.toLowerCase() === defaultUserEmail.toLowerCase());
+        if (!defaultUserExists) {
+          currentUsers.push({
+            id: 'user_default_1',
+            name: 'Ralyson Riccelli',
+            email: defaultUserEmail,
+            password: '123456',
+            role: 'student',
+            status: 'active',
+            isOnline: false,
+            lastAccess: new Date().toISOString()
+          });
+        }
+
+        setAllUsers(currentUsers);
+        localStorage.setItem('global_users', JSON.stringify(currentUsers));
+
+        const savedEditais = localStorage.getItem('global_editais');
+        if (savedEditais) setPredefinedEditais(JSON.parse(savedEditais));
+
+        const savedUser = localStorage.getItem('user');
+        if (savedUser) {
+          const parsedUser = JSON.parse(savedUser);
+          const globalUser = currentUsers.find((u: User) => u.id === parsedUser.id);
+          
+          if (globalUser && globalUser.status === 'active') {
+            setUser({ ...parsedUser, isOnline: true });
+            
+            const sSubs = localStorage.getItem(`subjects_${parsedUser.id}`);
+            if (sSubs) setSubjects(JSON.parse(sSubs));
+            
+            const sMocks = localStorage.getItem(`mocks_${parsedUser.id}`);
+            if (sMocks) setMocks(JSON.parse(sMocks));
+            
+            const sCycle = localStorage.getItem(`cycle_${parsedUser.id}`);
+            if (sCycle) setCycle(JSON.parse(sCycle));
+            
+            const sLogs = localStorage.getItem(`logs_${parsedUser.id}`);
+            if (sLogs) setStudyLogs(JSON.parse(sLogs));
+          }
+        }
+      } catch (error) {
+        console.error("Erro no carregamento:", error);
+      } finally {
+        setIsLoaded(true);
+        // Pequeno delay para garantir que o estado do React estabilizou
+        setTimeout(() => { firstLoadDone.current = true; }, 150);
       }
-    } catch (error) {
-      console.error("Erro crítico no carregamento inicial:", error);
-    } finally {
-      setIsLoaded(true);
-      firstLoadDone.current = true;
-    }
+    };
+    loadData();
   }, []);
 
-  // SALVAMENTO AUTOMÁTICO CENTRALIZADO
+  // SALVAMENTO AUTOMÁTICO
   useEffect(() => {
     if (!isLoaded || !firstLoadDone.current) return;
 
     try {
       if (user) {
         localStorage.setItem('user', JSON.stringify(user));
-        // Apenas salva dados de estudo se não for admin (admins gerenciam usuários/editais)
         if (user.role !== 'admin') {
           localStorage.setItem(`subjects_${user.id}`, JSON.stringify(subjects));
           localStorage.setItem(`mocks_${user.id}`, JSON.stringify(mocks));
           localStorage.setItem(`logs_${user.id}`, JSON.stringify(studyLogs));
-          if (cycle) {
-            localStorage.setItem(`cycle_${user.id}`, JSON.stringify(cycle));
-          }
+          if (cycle) localStorage.setItem(`cycle_${user.id}`, JSON.stringify(cycle));
         }
       }
-      
-      // Persistência Global
       localStorage.setItem('global_editais', JSON.stringify(predefinedEditais));
       localStorage.setItem('global_users', JSON.stringify(allUsers));
-      
     } catch (error) {
-      console.error("Falha ao persistir dados no LocalStorage:", error);
+      console.error("Erro ao salvar dados no LocalStorage:", error);
     }
   }, [subjects, mocks, cycle, user, studyLogs, predefinedEditais, allUsers, isLoaded]);
-
-  const handleExportData = () => {
-    if (!user) return;
-    const backup = {
-      user: {
-        weeklyGoal: user.weeklyGoal,
-        name: user.name,
-        email: user.email,
-        role: user.role
-      },
-      subjects,
-      mocks,
-      cycle,
-      studyLogs,
-      exportDate: new Date().toISOString(),
-      version: '1.5'
-    };
-    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `studyflow_backup_${user.name.replace(/\s+/g, '_').toLowerCase()}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleImportData = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const result = e.target?.result;
-        if (!result || typeof result !== 'string') return;
-        const data = JSON.parse(result);
-        
-        if (!data.subjects || !Array.isArray(data.subjects)) throw new Error("Formato inválido.");
-
-        if (user) {
-          setSubjects(data.subjects);
-          setMocks(data.mocks || []);
-          setStudyLogs(data.studyLogs || []);
-          setCycle(data.cycle || null);
-          alert("Dados importados com sucesso!");
-        }
-      } catch (err: any) {
-        alert("Erro na importação: " + err.message);
-      }
-    };
-    reader.readAsText(file);
-  };
 
   const handleUpdateUser = (updatedUser: User) => {
     setUser(updatedUser);
@@ -206,8 +169,7 @@ const App: React.FC = () => {
   };
 
   const handleLogin = (u: User) => {
-    const loggedInUser: User = { ...u, isOnline: true };
-    setUser(loggedInUser);
+    setUser({ ...u, isOnline: true });
     setAllUsers(prev => prev.map(p => p.id === u.id ? { ...p, lastAccess: new Date().toISOString(), isOnline: true } : p));
   };
 
@@ -227,23 +189,15 @@ const App: React.FC = () => {
   if (!isLoaded) return null;
 
   if (!user) {
-    return (
-      <Login 
-        users={allUsers}
-        onLogin={handleLogin} 
-        onRegister={handleRegister}
-      />
-    );
+    return <Login users={allUsers} onLogin={handleLogin} onRegister={handleRegister} />;
   }
 
   const renderPage = () => {
     if (user.role === 'admin') {
       return (
         <Admin 
-          users={allUsers} 
-          setUsers={setAllUsers}
-          editais={predefinedEditais} 
-          setEditais={setPredefinedEditais} 
+          users={allUsers} setUsers={setAllUsers}
+          editais={predefinedEditais} setEditais={setPredefinedEditais} 
           view={currentPage.includes('dashboard') ? 'users' : 'editais'}
         />
       );
@@ -252,19 +206,15 @@ const App: React.FC = () => {
     switch (currentPage) {
       case 'inicio': return (
         <Dashboard 
-          subjects={subjects} 
-          mocks={mocks} 
-          cycle={cycle} 
-          studyLogs={studyLogs} 
-          weeklyGoal={user.weeklyGoal || 20}
+          subjects={subjects} mocks={mocks} cycle={cycle} 
+          studyLogs={studyLogs} weeklyGoal={user.weeklyGoal || 20}
           onUpdateGoal={(hours) => handleUpdateUser({ ...user, weeklyGoal: hours })}
           isDarkMode={isDarkMode}
         />
       );
       case 'disciplinas': return (
         <Disciplinas 
-          subjects={subjects} 
-          setSubjects={setSubjects} 
+          subjects={subjects} setSubjects={setSubjects} 
           predefinedEditais={predefinedEditais}
           onAddLog={(minutes, topicId, subjectId) => setStudyLogs(prev => [...prev, { id: Date.now().toString(), minutes, topicId, subjectId, date: new Date().toISOString(), type: 'estudo' }])}
         />
@@ -272,8 +222,7 @@ const App: React.FC = () => {
       case 'ciclos': return <Ciclos subjects={subjects} setCycle={setCycle} cycle={cycle} />;
       case 'revisao': return (
         <Revisao 
-          subjects={subjects} 
-          setSubjects={setSubjects} 
+          subjects={subjects} setSubjects={setSubjects} 
           onAddLog={(minutes, topicId, subjectId) => setStudyLogs(prev => [...prev, { id: Date.now().toString(), minutes, topicId, subjectId, date: new Date().toISOString(), type: 'revisao' }])}
         />
       );
@@ -357,9 +306,9 @@ const App: React.FC = () => {
       {isProfileOpen && (
         <Profile 
           user={user} onUpdate={handleUpdateUser} 
-          onDelete={() => { /* Implementar exclusão via App */ }} 
+          onDelete={() => {}} 
           onClose={() => setIsProfileOpen(false)}
-          onExport={handleExportData} onImport={handleImportData}
+          onExport={() => {}} onImport={() => {}}
         />
       )}
     </div>

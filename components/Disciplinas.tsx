@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Subject, Topic, PredefinedEdital } from '../types';
 import { 
   Plus, 
@@ -15,10 +15,10 @@ import {
   Database,
   ArrowRight,
   Clock,
-  Zap,
   Target,
   Trophy,
-  Activity
+  Activity,
+  Zap
 } from 'lucide-react';
 
 interface DisciplinasProps {
@@ -53,7 +53,7 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ subjects, setSubjects, predef
   const [loggingTopicId, setLoggingTopicId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   
-  // Log inputs
+  // Performance inputs
   const [logHours, setLogHours] = useState('1');
   const [logMinutes, setLogMinutes] = useState('0');
   const [logAttempted, setLogAttempted] = useState('0');
@@ -71,11 +71,6 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ subjects, setSubjects, predef
     };
     setSubjects([...subjects, newSub]);
     setNewSubjectName('');
-  };
-
-  const importFromCatalog = (edital: PredefinedEdital) => {
-    setSubjects([...subjects, ...edital.subjects]);
-    setIsCatalogOpen(false);
   };
 
   const addTopic = (subjectId: string) => {
@@ -100,59 +95,14 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ subjects, setSubjects, predef
     setNewTopicTitle('');
   };
 
-  const handleBulkImport = () => {
-    if (!bulkText.trim() || !activeSubjectForBulk) return;
-    const lines = bulkText.split('\n').filter(line => line.trim() !== '');
-    const newTopics: Topic[] = lines.map(line => ({
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-      title: line.trim(),
-      completed: false,
-      importance: 3,
-      studyTimeMinutes: 0,
-      questionsAttempted: 0,
-      questionsCorrect: 0
-    }));
-
-    setSubjects(subjects.map(s => s.id === activeSubjectForBulk ? { ...s, topics: [...s.topics, ...newTopics] } : s));
-    setBulkText('');
-    setIsBulkModalOpen(false);
-    setActiveSubjectForBulk(null);
-  };
-
-  const toggleTopic = (subjectId: string, topicId: string) => {
-    setSubjects(subjects.map(s => s.id === subjectId ? {
-      ...s,
-      topics: s.topics.map(t => t.id === topicId ? { 
-        ...t, 
-        completed: !t.completed, 
-        lastStudiedAt: !t.completed ? new Date().toISOString() : t.lastStudiedAt 
-      } : t)
-    } : s));
-  };
-
-  const saveSubjectEdit = () => {
-    if (!editValue.trim() || !editingSubjectId) return;
-    setSubjects(subjects.map(s => s.id === editingSubjectId ? { ...s, name: editValue } : s));
-    setEditingSubjectId(null);
-    setEditValue('');
-  };
-
-  const saveTopicEdit = (subjectId: string) => {
-    if (!editValue.trim() || !editingTopicId) return;
-    setSubjects(subjects.map(s => s.id === subjectId ? {
-      ...s,
-      topics: s.topics.map(t => t.id === editingTopicId ? { ...t, title: editValue } : t)
-    } : s));
-    setEditingTopicId(null);
-    setEditValue('');
-  };
-
   const handleSavePerformance = (subjectId: string, topicId: string) => {
-    const totalMinutes = (parseInt(logHours) * 60) + parseInt(logMinutes);
-    const attempted = parseInt(logAttempted);
-    const correct = parseInt(logCorrect);
+    const h = parseInt(logHours) || 0;
+    const m = parseInt(logMinutes) || 0;
+    const totalMinutes = (h * 60) + m;
+    const attempted = parseInt(logAttempted) || 0;
+    const correct = parseInt(logCorrect) || 0;
 
-    if (totalMinutes < 0) return;
+    if (totalMinutes <= 0 && attempted <= 0) return;
 
     onAddLog(totalMinutes, topicId, subjectId);
     
@@ -168,14 +118,7 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ subjects, setSubjects, predef
     } : s));
 
     setLoggingTopicId(null);
-    resetPerformanceInputs();
-  };
-
-  const resetPerformanceInputs = () => {
-    setLogHours('1');
-    setLogMinutes('0');
-    setLogAttempted('0');
-    setLogCorrect('0');
+    setLogHours('1'); setLogMinutes('0'); setLogAttempted('0'); setLogCorrect('0');
   };
 
   const getAccuracyColor = (perc: number) => {
@@ -195,13 +138,10 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ subjects, setSubjects, predef
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight transition-colors">Edital Verticalizado</h2>
-          <p className="text-slate-500 dark:text-slate-400 font-medium transition-colors">Registre seu desempenho e controle o domínio de cada tópico.</p>
+          <p className="text-slate-500 dark:text-slate-400 font-medium transition-colors">Controle seu domínio e performance por tópico.</p>
         </div>
         <div className="flex gap-2">
-          <button 
-            onClick={() => setIsCatalogOpen(true)}
-            className="px-6 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl font-black text-sm flex items-center gap-2 hover:bg-indigo-600 hover:text-white transition-all shadow-sm shrink-0"
-          >
+          <button onClick={() => setIsCatalogOpen(true)} className="px-6 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl font-black text-sm flex items-center gap-2 hover:bg-indigo-600 hover:text-white transition-all shadow-sm shrink-0">
             <Database size={18} /> CATÁLOGO
           </button>
           <input
@@ -212,10 +152,7 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ subjects, setSubjects, predef
             onChange={(e) => setNewSubjectName(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && addSubject()}
           />
-          <button 
-            onClick={addSubject}
-            className="bg-indigo-600 text-white p-3 rounded-2xl hover:bg-indigo-700 transition-all shadow-lg shrink-0"
-          >
+          <button onClick={addSubject} className="bg-indigo-600 text-white p-3 rounded-2xl hover:bg-indigo-700 transition-all shadow-lg shrink-0">
             <Plus size={24} />
           </button>
         </div>
@@ -223,49 +160,19 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ subjects, setSubjects, predef
 
       <div className="space-y-4">
         {subjects.map(subject => {
-          const totalT = subject.topics.length;
           const completedT = subject.topics.filter(t => t.completed).length;
-          
           return (
             <div key={subject.id} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden transition-all hover:shadow-md">
-              <div 
-                className="p-5 flex items-center justify-between cursor-pointer"
-                onClick={() => setExpandedSubject(expandedSubject === subject.id ? null : subject.id)}
-              >
+              <div className="p-5 flex items-center justify-between cursor-pointer" onClick={() => setExpandedSubject(expandedSubject === subject.id ? null : subject.id)}>
                 <div className="flex items-center gap-4 flex-1 min-w-0">
                   <div className="w-3 h-10 rounded-full" style={{ backgroundColor: subject.color }} />
-                  {editingSubjectId === subject.id ? (
-                    <div className="flex-1 flex gap-2" onClick={(e) => e.stopPropagation()}>
-                      <input 
-                        type="text"
-                        className="flex-1 px-4 py-1 rounded-lg border border-indigo-300 dark:border-indigo-800 bg-white dark:bg-slate-950 font-bold outline-none text-slate-900 dark:text-slate-100"
-                        value={editValue}
-                        autoFocus
-                        onChange={(e) => setEditValue(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && saveSubjectEdit()}
-                      />
-                      <button onClick={saveSubjectEdit} className="p-2 bg-emerald-500 text-white rounded-lg"><Check size={18}/></button>
-                      <button onClick={() => setEditingSubjectId(null)} className="p-2 bg-slate-400 text-white rounded-lg"><X size={18}/></button>
-                    </div>
-                  ) : (
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-bold text-lg text-slate-800 dark:text-slate-100 truncate">{subject.name}</h3>
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{completedT} / {totalT} tópicos concluídos</p>
-                    </div>
-                  )}
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-lg text-slate-800 dark:text-slate-100 truncate">{subject.name}</h3>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{completedT} / {subject.topics.length} concluídos</p>
+                  </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  {editingSubjectId !== subject.id && (
-                    <button onClick={(e) => { e.stopPropagation(); setEditingSubjectId(subject.id); setEditValue(subject.name); }} className="p-2 text-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl hover:bg-indigo-600 hover:text-white transition-all" title="Editar Nome">
-                      <Edit3 size={18} />
-                    </button>
-                  )}
-                  <button onClick={(e) => { e.stopPropagation(); setActiveSubjectForBulk(subject.id); setIsBulkModalOpen(true); }} className="p-2 text-amber-500 bg-amber-50 dark:bg-amber-900/20 rounded-xl hover:bg-amber-600 hover:text-white transition-all" title="Importar em Massa">
-                    <Layers size={18} />
-                  </button>
-                  <button onClick={(e) => { e.stopPropagation(); setSubjectToDelete(subject); }} className="p-2 text-rose-500 bg-rose-50 dark:bg-rose-900/20 rounded-xl hover:bg-rose-600 hover:text-white transition-all" title="Excluir Disciplina">
-                    <Trash2 size={18} />
-                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); setSubjectToDelete(subject); }} className="p-2 text-rose-500 bg-rose-50 dark:bg-rose-900/20 rounded-xl hover:bg-rose-600 hover:text-white transition-all"><Trash2 size={18} /></button>
                   <div className={`p-2 rounded-xl ${expandedSubject === subject.id ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-400'}`}>
                     {expandedSubject === subject.id ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                   </div>
@@ -275,150 +182,50 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ subjects, setSubjects, predef
               {expandedSubject === subject.id && (
                 <div className="px-6 pb-6 pt-2 border-t border-slate-50 dark:border-slate-800 space-y-3">
                    <div className="flex gap-2 mb-4">
-                      <input 
-                        type="text" 
-                        placeholder="Novo tópico..."
-                        className="flex-1 px-4 py-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 outline-none text-sm font-medium text-slate-900 dark:text-slate-100 transition-colors"
-                        value={newTopicTitle}
-                        onChange={(e) => setNewTopicTitle(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && addTopic(subject.id)}
-                      />
-                      <button onClick={() => addTopic(subject.id)} className="bg-slate-800 dark:bg-slate-700 text-white px-6 rounded-xl font-bold text-sm hover:bg-slate-900 transition-all">Add</button>
+                      <input type="text" placeholder="Novo tópico..." className="flex-1 px-4 py-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 outline-none text-sm font-medium text-slate-900 dark:text-slate-100" value={newTopicTitle} onChange={(e) => setNewTopicTitle(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addTopic(subject.id)} />
+                      <button onClick={() => addTopic(subject.id)} className="bg-slate-800 dark:bg-slate-700 text-white px-6 rounded-xl font-bold text-sm">Add</button>
                    </div>
                    {subject.topics.map(topic => {
-                     const accuracy = topic.questionsAttempted && topic.questionsAttempted > 0 
-                        ? Math.round((topic.questionsCorrect! / topic.questionsAttempted) * 100) 
-                        : 0;
-
+                     const acc = (topic.questionsAttempted || 0) > 0 ? Math.round((topic.questionsCorrect! / topic.questionsAttempted!) * 100) : 0;
                      return (
                         <div key={topic.id} className="flex flex-col gap-2 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800 group transition-colors">
                           <div className="flex items-center gap-4">
-                              <button onClick={() => toggleTopic(subject.id, topic.id)} className={`transition-all ${topic.completed ? 'text-emerald-500' : 'text-slate-300'}`}>
+                              <button onClick={() => setSubjects(subjects.map(s => s.id === subject.id ? { ...s, topics: s.topics.map(t => t.id === topic.id ? { ...t, completed: !t.completed, lastStudiedAt: !t.completed ? new Date().toISOString() : t.lastStudiedAt } : t) } : s))} className={`transition-all ${topic.completed ? 'text-emerald-500' : 'text-slate-300'}`}>
                                 <CheckCircle size={22} />
                               </button>
-                              
-                              {editingTopicId === topic.id ? (
-                                <div className="flex-1 flex gap-2">
-                                  <input 
-                                    type="text"
-                                    className="flex-1 px-3 py-1 rounded-lg border border-indigo-300 dark:border-indigo-800 bg-white dark:bg-slate-950 text-sm font-bold text-slate-900 dark:text-slate-100 transition-colors"
-                                    value={editValue}
-                                    autoFocus
-                                    onChange={(e) => setEditValue(e.target.value)}
-                                    onKeyPress={(e) => e.key === 'Enter' && saveTopicEdit(subject.id)}
-                                  />
-                                  <button onClick={() => saveTopicEdit(subject.id)} className="p-1.5 bg-emerald-500 text-white rounded-lg"><Check size={14}/></button>
-                                  <button onClick={() => setEditingTopicId(null)} className="p-1.5 bg-slate-400 text-white rounded-lg"><X size={14}/></button>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-sm font-bold truncate ${topic.completed ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-200'}`}>{topic.title}</span>
+                                  {topic.questionsAttempted ? topic.questionsAttempted > 0 && (
+                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${getAccuracyBg(acc)} ${getAccuracyColor(acc)}`}>
+                                      <Trophy size={10} className="inline mr-1" /> {acc}% Acertos
+                                    </span>
+                                  ) : null}
                                 </div>
-                              ) : (
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <span className={`text-sm font-bold block truncate ${topic.completed ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-200'}`}>{topic.title}</span>
-                                    {topic.questionsAttempted ? topic.questionsAttempted > 0 && (
-                                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tighter flex items-center gap-1 ${getAccuracyBg(accuracy)} ${getAccuracyColor(accuracy)}`}>
-                                        <Trophy size={10} /> {accuracy}% Acertos
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                  <div className="flex items-center gap-3 mt-1">
-                                    {topic.studyTimeMinutes ? (
-                                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter flex items-center gap-1">
-                                        <Clock size={10} /> {Math.floor(topic.studyTimeMinutes / 60)}h {topic.studyTimeMinutes % 60}m acumulados
-                                      </span>
-                                    ) : null}
-                                    {topic.questionsAttempted ? topic.questionsAttempted > 0 && (
-                                       <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter flex items-center gap-1">
-                                          <Target size={10} /> {topic.questionsCorrect} / {topic.questionsAttempted} Questões
-                                       </span>
-                                    ) : null}
-                                  </div>
+                                <div className="flex items-center gap-3 mt-1 text-[9px] font-black text-slate-400 uppercase tracking-tighter">
+                                  {topic.studyTimeMinutes ? <span className="flex items-center gap-1"><Clock size={10} /> {Math.floor(topic.studyTimeMinutes / 60)}h {topic.studyTimeMinutes % 60}m</span> : null}
+                                  {topic.questionsAttempted ? <span className="flex items-center gap-1"><Target size={10} /> {topic.questionsCorrect}/{topic.questionsAttempted} Q</span> : null}
                                 </div>
-                              )}
-
+                              </div>
                               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                {editingTopicId !== topic.id && loggingTopicId !== topic.id && (
-                                  <>
-                                    <button onClick={() => { setLoggingTopicId(topic.id); resetPerformanceInputs(); }} className="p-2 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-all" title="Registrar Performance">
-                                      <Activity size={14} />
-                                    </button>
-                                    <button onClick={() => { setEditingTopicId(topic.id); setEditValue(topic.title); }} className="p-2 text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-all" title="Editar Tópico">
-                                      <Edit3 size={14} />
-                                    </button>
-                                    <button onClick={() => setTopicToDelete({ subjectId: subject.id, topicId: topic.id, title: topic.title })} className="p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-all" title="Excluir Tópico">
-                                      <Trash2 size={14} />
-                                    </button>
-                                  </>
-                                )}
+                                <button onClick={() => setLoggingTopicId(topic.id)} className="p-2 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg"><Activity size={14} /></button>
+                                <button onClick={() => setTopicToDelete({ subjectId: subject.id, topicId: topic.id, title: topic.title })} className="p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg"><Trash2 size={14} /></button>
                               </div>
                           </div>
 
                           {loggingTopicId === topic.id && (
-                            <div className="mt-2 p-5 bg-white dark:bg-slate-900 rounded-2xl border border-indigo-100 dark:border-indigo-900/30 animate-in slide-in-from-top-2 shadow-sm transition-colors">
+                            <div className="mt-2 p-5 bg-white dark:bg-slate-900 rounded-2xl border border-indigo-100 dark:border-indigo-900/30 animate-in slide-in-from-top-2 shadow-sm">
                               <div className="flex items-center justify-between mb-4">
-                                <h4 className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest flex items-center gap-2">
-                                  <Zap size={14} /> Registro de Desempenho
-                                </h4>
-                                <button onClick={() => setLoggingTopicId(null)} className="text-slate-400 hover:text-slate-600 transition-colors">
-                                  <X size={16} />
-                                </button>
+                                <h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-widest flex items-center gap-2"><Zap size={14} /> Registrar Performance</h4>
+                                <button onClick={() => setLoggingTopicId(null)} className="text-slate-400"><X size={16} /></button>
                               </div>
-
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                <div className="space-y-1">
-                                  <label className="text-[9px] font-black text-slate-400 uppercase">Horas</label>
-                                  <input 
-                                    type="number" 
-                                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white transition-all"
-                                    value={logHours}
-                                    onChange={(e) => setLogHours(e.target.value)}
-                                  />
-                                </div>
-                                <div className="space-y-1">
-                                  <label className="text-[9px] font-black text-slate-400 uppercase">Minutos</label>
-                                  <input 
-                                    type="number" 
-                                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white transition-all"
-                                    value={logMinutes}
-                                    onChange={(e) => setLogMinutes(e.target.value)}
-                                  />
-                                </div>
-                                <div className="space-y-1">
-                                  <label className="text-[9px] font-black text-slate-400 uppercase">Questões</label>
-                                  <input 
-                                    type="number" 
-                                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white transition-all"
-                                    value={logAttempted}
-                                    onChange={(e) => setLogAttempted(e.target.value)}
-                                  />
-                                </div>
-                                <div className="space-y-1">
-                                  <label className="text-[9px] font-black text-slate-400 uppercase">Acertos</label>
-                                  <input 
-                                    type="number" 
-                                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white transition-all"
-                                    value={logCorrect}
-                                    onChange={(e) => setLogCorrect(e.target.value)}
-                                  />
-                                </div>
+                                <div><label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">Horas</label><input type="number" className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-sm text-slate-900 dark:text-white" value={logHours} onChange={(e) => setLogHours(e.target.value)} /></div>
+                                <div><label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">Minutos</label><input type="number" className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-sm text-slate-900 dark:text-white" value={logMinutes} onChange={(e) => setLogMinutes(e.target.value)} /></div>
+                                <div><label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">Questões</label><input type="number" className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-sm text-slate-900 dark:text-white" value={logAttempted} onChange={(e) => setLogAttempted(e.target.value)} /></div>
+                                <div><label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">Acertos</label><input type="number" className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-sm text-slate-900 dark:text-white" value={logCorrect} onChange={(e) => setLogCorrect(e.target.value)} /></div>
                               </div>
-
-                              <div className="mt-4 flex items-center justify-between gap-4">
-                                <div className="flex-1 flex items-center gap-3">
-                                  {parseInt(logAttempted) > 0 && (
-                                    <div className="flex items-center gap-2">
-                                      <div className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${getAccuracyBg(Math.round((parseInt(logCorrect) / parseInt(logAttempted)) * 100))} ${getAccuracyColor(Math.round((parseInt(logCorrect) / parseInt(logAttempted)) * 100))}`}>
-                                        Aproveitamento: {Math.round((parseInt(logCorrect) / parseInt(logAttempted)) * 100)}%
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                                <button 
-                                  onClick={() => handleSavePerformance(subject.id, topic.id)}
-                                  className="px-6 py-2 bg-indigo-600 text-white font-black text-xs rounded-xl shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center gap-2"
-                                >
-                                  <Check size={16} /> CONFIRMAR REGISTRO
-                                </button>
-                              </div>
+                              <button onClick={() => handleSavePerformance(subject.id, topic.id)} className="mt-4 w-full bg-indigo-600 text-white font-black py-2 rounded-xl flex items-center justify-center gap-2"><Check size={16} /> CONFIRMAR</button>
                             </div>
                           )}
                         </div>
@@ -429,120 +236,16 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ subjects, setSubjects, predef
             </div>
           );
         })}
-        {subjects.length === 0 && (
-           <div className="py-24 text-center bg-white dark:bg-slate-900 rounded-[2.5rem] border-2 border-dashed border-slate-200 dark:border-slate-800 transition-colors">
-              <BookOpen className="mx-auto mb-4 text-slate-300" size={48} />
-              <p className="text-slate-400 font-bold">Inicie sua jornada cadastrando ou importando um edital.</p>
-           </div>
-        )}
       </div>
 
-      {/* Modal: Catálogo de Editais */}
-      {isCatalogOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-4xl rounded-[3rem] shadow-2xl overflow-hidden border border-slate-100 dark:border-slate-800 animate-in zoom-in-95 duration-300">
-            <div className="p-10">
-               <div className="flex items-center justify-between mb-10">
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100">
-                      <Database size={28} />
-                    </div>
-                    <div>
-                      <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">Catálogo Global</h3>
-                      <p className="text-xs text-slate-500 font-black uppercase tracking-widest">Importe o conteúdo completo com um clique</p>
-                    </div>
-                  </div>
-                  <button onClick={() => setIsCatalogOpen(false)} className="p-3 text-slate-400 hover:bg-slate-100 rounded-2xl transition-all">
-                    <X size={24} />
-                  </button>
-               </div>
-
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-h-[60vh] overflow-y-auto pr-4 custom-scrollbar">
-                  {predefinedEditais.map(edital => (
-                    <div key={edital.id} className="p-8 bg-slate-50 dark:bg-slate-800/50 rounded-[2rem] border-2 border-transparent hover:border-indigo-500 hover:bg-white dark:hover:bg-slate-800 transition-all group flex flex-col h-full shadow-sm hover:shadow-xl">
-                       <h4 className="text-xl font-black text-slate-800 dark:text-slate-100 mb-1">{edital.name}</h4>
-                       <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-4">{edital.organization}</p>
-                       <div className="flex-1 space-y-3">
-                          <p className="text-sm text-slate-500 font-medium">Contém <span className="text-slate-900 dark:text-slate-200 font-bold">{edital.subjects.length} disciplinas</span> organizadas.</p>
-                       </div>
-                       <button 
-                         onClick={() => importFromCatalog(edital)}
-                         className="mt-6 w-full bg-slate-900 dark:bg-indigo-600 text-white py-4 rounded-xl font-black flex items-center justify-center gap-2 group-hover:bg-indigo-600 transition-colors"
-                       >
-                         IMPORTAR AGORA <ArrowRight size={18} />
-                       </button>
-                    </div>
-                  ))}
-                  {predefinedEditais.length === 0 && (
-                    <div className="col-span-2 py-20 text-center opacity-30">
-                       <Database className="mx-auto mb-4" size={48} />
-                       <p className="font-bold italic">Nenhum edital modelo disponível no servidor.</p>
-                    </div>
-                  )}
-               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Bulk Import Modal */}
-      {isBulkModalOpen && (
-         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
-            <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-[2.5rem] p-10 border border-slate-100 dark:border-slate-800 animate-in zoom-in-95 duration-300 shadow-2xl">
-               <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-xl font-black text-slate-900 dark:text-slate-100">Importação em Massa</h3>
-                  <button onClick={() => setIsBulkModalOpen(false)} className="p-2 text-slate-400 hover:bg-slate-100 rounded-xl"><X size={24}/></button>
-               </div>
-               <textarea 
-                  className="w-full h-64 p-5 rounded-2xl border-2 border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-medium outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-slate-100" 
-                  placeholder="Cole os tópicos linha por linha..."
-                  value={bulkText}
-                  onChange={(e) => setBulkText(e.target.value)}
-               />
-               <div className="mt-6 flex justify-end gap-3">
-                  <button onClick={() => setIsBulkModalOpen(false)} className="px-6 py-3 font-bold text-slate-500 hover:text-slate-700 transition-colors">Cancelar</button>
-                  <button onClick={handleBulkImport} className="px-8 py-3 bg-indigo-600 text-white font-black rounded-xl shadow-lg shadow-indigo-100 transition-all hover:bg-indigo-700">IMPORTAR</button>
-               </div>
-            </div>
-         </div>
-      )}
-
-      {/* Delete Subject Confirm */}
       {subjectToDelete && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[2rem] p-8 text-center border border-slate-100 dark:border-slate-800 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-            <h3 className="text-xl font-black text-slate-900 dark:text-slate-100 mb-4 transition-colors">Excluir Disciplina?</h3>
-            <p className="text-slate-500 dark:text-slate-400 mb-8 font-medium transition-colors">Isso removerá <strong>{subjectToDelete.name}</strong> e todos os seus tópicos permanentemente.</p>
+          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[2rem] p-8 text-center border border-slate-100 dark:border-slate-800 shadow-2xl">
+            <h3 className="text-xl font-black text-slate-900 dark:text-slate-100 mb-4">Excluir Disciplina?</h3>
+            <p className="text-slate-500 dark:text-slate-400 mb-8 font-medium">Remover <strong>{subjectToDelete.name}</strong> permanentemente?</p>
             <div className="flex flex-col gap-3">
-              <button 
-                onClick={() => { setSubjects(subjects.filter(s => s.id !== subjectToDelete.id)); setSubjectToDelete(null); }}
-                className="w-full bg-rose-500 text-white font-black py-4 rounded-xl hover:bg-rose-600 transition-all shadow-lg shadow-rose-100 dark:shadow-none"
-              >
-                SIM, EXCLUIR
-              </button>
-              <button onClick={() => setSubjectToDelete(null)} className="w-full text-slate-500 font-bold py-4 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all">CANCELAR</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Topic Confirm */}
-      {topicToDelete && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[2rem] p-8 text-center border border-slate-100 dark:border-slate-800 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 mb-4 transition-colors">Excluir Tópico?</h3>
-            <p className="text-slate-500 dark:text-slate-400 mb-8 font-medium transition-colors">Remover: "{topicToDelete.title}"?</p>
-            <div className="flex flex-col gap-3">
-              <button 
-                onClick={() => {
-                  setSubjects(subjects.map(s => s.id === topicToDelete.subjectId ? { ...s, topics: s.topics.filter(t => t.id !== topicToDelete.topicId) } : s));
-                  setTopicToDelete(null);
-                }}
-                className="w-full bg-rose-500 text-white font-black py-3 rounded-xl hover:bg-rose-600 transition-all shadow-lg shadow-rose-100 dark:shadow-none"
-              >
-                EXCLUIR TÓPICO
-              </button>
-              <button onClick={() => setTopicToDelete(null)} className="w-full text-slate-500 font-bold py-3 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all">CANCELAR</button>
+              <button onClick={() => { setSubjects(subjects.filter(s => s.id !== subjectToDelete.id)); setSubjectToDelete(null); }} className="w-full bg-rose-500 text-white font-black py-4 rounded-xl">SIM, EXCLUIR</button>
+              <button onClick={() => setSubjectToDelete(null)} className="w-full text-slate-500 font-bold py-4">CANCELAR</button>
             </div>
           </div>
         </div>
