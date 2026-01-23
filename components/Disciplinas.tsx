@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Subject, Topic, PredefinedEdital, User } from '../types';
 import { supabase } from '../lib/supabase';
-import { Plus, Trash2, ChevronDown, ChevronUp, CheckCircle, X, Layers, ArrowRight, Loader2, BookOpen } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, ChevronUp, CheckCircle, X, Layers, Loader2, BookOpen } from 'lucide-react';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6'];
 
@@ -25,22 +25,20 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
     if (!name.trim()) return;
     setLoading(true);
 
-    // Criamos um ID temporário para atualização imediata da UI (Optimistic UI)
-    const tempId = Date.now().toString();
+    const tempId = `temp-${Date.now()}`;
     const newSubject: Subject = { 
       id: tempId, 
+      user_id: user.id,
       name: name.trim(), 
       topics, 
       color: COLORS[subjects.length % COLORS.length] 
     };
 
-    // Atualiza a interface NA HORA
     setSubjects(prev => [...prev, newSubject]);
     setNewSubjectName('');
 
     try {
       if (supabase) {
-        console.debug("Tentando persistir no banco...");
         const { data, error } = await supabase
           .from('subjects')
           .insert([{ 
@@ -53,16 +51,9 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
 
         if (error) {
           console.error("Erro Supabase:", error);
-          // Se deu erro no banco, removemos o item temporário da lista para não enganar o usuário
           setSubjects(prev => prev.filter(s => s.id !== tempId));
-          
-          if (error.code === '42703' || error.message.includes('user_id')) {
-            alert("Erro de Configuração: Sua tabela 'subjects' no Supabase precisa da coluna 'user_id'. Execute o comando SQL no editor do Supabase.");
-          } else {
-            alert(`Não foi possível salvar no banco: ${error.message}. Verifique sua chave de API.`);
-          }
+          alert(`Erro ao salvar no banco: ${error.message}`);
         } else if (data) {
-          // Substitui o ID temporário pelo ID real do banco
           setSubjects(prev => prev.map(s => s.id === tempId ? { ...data, id: String(data.id), color: newSubject.color } : s));
         }
       }
@@ -75,20 +66,20 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
 
   const updateSubjectData = async (subjectId: string, payload: Partial<Subject>) => {
     const sId = String(subjectId);
+    if (sId.startsWith('temp-')) {
+        console.warn("Aguardando sincronização do banco para atualizar tópicos.");
+        return;
+    }
     
-    // UI Otimista: Atualiza localmente primeiro
     setSubjects(prev => prev.map(s => String(s.id) === sId ? { ...s, ...payload } : s));
     
     try {
       if (supabase) {
         const { error } = await supabase.from('subjects').update(payload).eq('id', sId);
-        if (error) {
-           console.warn("Erro ao sincronizar tópico com o banco:", error.message);
-           // Não alertamos aqui para não interromper o fluxo do usuário, o erro fica no log.
-        }
+        if (error) console.error("Erro ao sincronizar com banco:", error.message);
       }
     } catch (err) {
-      console.error("Falha na rede ao atualizar dados.");
+      console.error("Falha na rede.");
     }
   };
 
@@ -127,12 +118,8 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
     const idToDelete = String(id);
     setSubjects(prev => prev.filter(s => String(s.id) !== idToDelete));
     
-    if (supabase) {
-      try {
-        await supabase.from('subjects').delete().eq('id', idToDelete);
-      } catch (e) {
-        console.error("Erro ao deletar no banco.");
-      }
+    if (supabase && !idToDelete.startsWith('temp-')) {
+      await supabase.from('subjects').delete().eq('id', idToDelete);
     }
   };
 
@@ -150,7 +137,7 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
           <div className="flex">
             <input 
               type="text" 
-              placeholder="Ex: Direito Constitucional" 
+              placeholder="Ex: Direito Administrativo" 
               className="px-5 py-3 border border-slate-200 dark:border-slate-800 rounded-l-2xl outline-none bg-white dark:bg-slate-900 font-bold dark:text-white w-full" 
               value={newSubjectName} 
               onChange={(e) => setNewSubjectName(e.target.value)} 

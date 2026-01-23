@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
-  Home, BookOpen, RefreshCcw, Calendar, BarChart2, LogOut, Menu, X,
-  BrainCircuit, Award, Sun, Moon, Users, Database, Loader2
+  Home, BookOpen, RefreshCcw, BarChart2, LogOut, Menu, X,
+  BrainCircuit, Award, Sun, Moon, Loader2
 } from 'lucide-react';
 import { User, Subject, MockExam, StudyCycle, StudySession, PredefinedEdital } from './types';
 import { supabase } from './lib/supabase';
@@ -31,15 +31,15 @@ const App: React.FC = () => {
     return saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
 
-  const [editais, setEditais] = useState<PredefinedEdital[]>([
+  const [editais] = useState<PredefinedEdital[]>([
     {
       id: 'edital-pf-agente',
       name: 'Agente da Polícia Federal',
       organization: 'PF / Cebraspe',
       lastUpdated: new Date().toISOString(),
       subjects: [
-        { id: 'pf-1', name: 'Língua Portuguesa', color: '#6366f1', topics: [{ id: 't1', title: 'Compreensão de textos', completed: false, importance: 5 }] },
-        { id: 'pf-2', name: 'Informática', color: '#10b981', topics: [{ id: 't3', title: 'Segurança da Informação', completed: false, importance: 5 }] }
+        { id: 'pf-1', name: 'Língua Portuguesa', topics: [{ id: 't1', title: 'Compreensão de textos', completed: false, importance: 5 }], color: '#6366f1' },
+        { id: 'pf-2', name: 'Informática', topics: [{ id: 't3', title: 'Segurança da Informação', completed: false, importance: 5 }], color: '#10b981' }
       ]
     }
   ]);
@@ -47,13 +47,13 @@ const App: React.FC = () => {
   const fetchUserData = useCallback(async (userId: string) => {
     if (!supabase) return;
     try {
-      const { data: subData, error } = await supabase
+      // Carregar Matérias
+      const { data: subData } = await supabase
         .from('subjects')
         .select('*')
         .eq('user_id', userId)
         .order('created_at', { ascending: true });
       
-      if (error) throw error;
       if (subData) {
         setSubjects(subData.map((s, index) => ({
           ...s,
@@ -62,25 +62,41 @@ const App: React.FC = () => {
           color: COLORS[index % COLORS.length]
         })));
       }
+
+      // Carregar Simulados
+      const { data: mockData } = await supabase
+        .from('mocks')
+        .select('*')
+        .eq('user_id', userId)
+        .order('date', { ascending: false });
+      
+      if (mockData) {
+        setMocks(mockData.map(m => ({ ...m, id: String(m.id) })));
+      }
+
+      // Carregar Logs
+      const { data: logData } = await supabase
+        .from('study_logs')
+        .select('*')
+        .eq('user_id', userId)
+        .order('date', { ascending: false });
+      
+      if (logData) {
+        setStudyLogs(logData.map(l => ({ ...l, id: String(l.id) })));
+      }
     } catch (err) {
-      console.error("Erro ao sincronizar matérias:", err);
+      console.error("Erro ao sincronizar dados do usuário:", err);
     }
   }, []);
 
   useEffect(() => {
     let isMounted = true;
-
     const init = async () => {
-      const safetyTimeout = setTimeout(() => {
-        if (isMounted && !isLoaded) setIsLoaded(true);
-      }, 3000);
-
       try {
         if (!supabase) {
-          if (isMounted) setIsLoaded(true);
+          setIsLoaded(true);
           return;
         }
-
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user && isMounted) {
           const u: User = {
@@ -95,9 +111,8 @@ const App: React.FC = () => {
           await fetchUserData(session.user.id);
         }
       } catch (err) {
-        console.error("Falha na inicialização da sessão:", err);
+        console.error("Erro na inicialização:", err);
       } finally {
-        clearTimeout(safetyTimeout);
         if (isMounted) setIsLoaded(true);
       }
     };
@@ -120,6 +135,8 @@ const App: React.FC = () => {
           } else if (event === 'SIGNED_OUT' && isMounted) {
             setUser(null);
             setSubjects([]);
+            setMocks([]);
+            setStudyLogs([]);
             setCurrentPage('inicio');
           }
         })
@@ -142,41 +159,34 @@ const App: React.FC = () => {
     if (supabase) await supabase.auth.signOut();
     setUser(null);
     setSubjects([]);
+    setMocks([]);
     setCurrentPage('inicio');
   };
 
   if (!isLoaded) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
-        <div className="relative w-24 h-24 mb-8">
-           <div className="absolute inset-0 border-4 border-indigo-500/20 rounded-full"></div>
-           <div className="absolute inset-0 border-4 border-t-indigo-500 rounded-full animate-spin"></div>
-        </div>
+        <Loader2 className="animate-spin text-indigo-500 mb-4" size={48} />
         <h2 className="text-white font-black text-xl mb-2">StudyFlow Pro</h2>
-        <p className="text-slate-500 text-sm font-bold uppercase tracking-widest animate-pulse">Sincronizando seu progresso...</p>
+        <p className="text-slate-500 text-sm font-bold uppercase tracking-widest animate-pulse">Sincronizando banco de dados...</p>
       </div>
     );
   }
 
   if (!user) {
-    return (
-      <Login 
-        users={[]} 
-        onLogin={(u) => { setUser(u); fetchUserData(u.id); }} 
-        onRegister={(u) => { setUser(u); fetchUserData(u.id); }} 
-      />
-    );
+    return <Login users={[]} onLogin={(u) => { setUser(u); fetchUserData(u.id); }} onRegister={(u) => { setUser(u); fetchUserData(u.id); }} />;
   }
 
   const renderPage = () => {
     switch (currentPage) {
       case 'inicio': return <Dashboard subjects={subjects} mocks={mocks} cycle={cycle} studyLogs={studyLogs} weeklyGoal={user.weeklyGoal || 20} onUpdateGoal={() => {}} isDarkMode={isDarkMode} />;
       case 'disciplinas': return <Disciplinas user={user} subjects={subjects} setSubjects={setSubjects} predefinedEditais={editais} onAddLog={() => {}} />;
-      case 'ciclos': return <Ciclos subjects={subjects} setCycle={setCycle} cycle={cycle} />;
+      // Fix: Pass user to Ciclos component to satisfy user_id requirement in StudyCycle
+      case 'ciclos': return <Ciclos user={user} subjects={subjects} setCycle={setCycle} cycle={cycle} />;
       case 'revisao': return <Revisao subjects={subjects} setSubjects={setSubjects} onAddLog={() => {}} />;
-      case 'simulados': return <Simulados mocks={mocks} setMocks={setMocks} subjects={subjects} />;
-      case 'admin_users': return <Admin users={allUsers} setUsers={setAllUsers} editais={editais} setEditais={setEditais} view="users" />;
-      case 'admin_editais': return <Admin users={allUsers} setUsers={setAllUsers} editais={editais} setEditais={setEditais} view="editais" />;
+      case 'simulados': return <Simulados user={user} mocks={mocks} setMocks={setMocks} subjects={subjects} />;
+      case 'admin_users': return <Admin users={allUsers} setUsers={setAllUsers} editais={editais} setEditais={() => {}} view="users" />;
+      case 'admin_editais': return <Admin users={allUsers} setUsers={setAllUsers} editais={editais} setEditais={() => {}} view="editais" />;
       default: return <Dashboard subjects={subjects} mocks={mocks} cycle={cycle} studyLogs={studyLogs} weeklyGoal={user.weeklyGoal || 20} onUpdateGoal={() => {}} isDarkMode={isDarkMode} />;
     }
   };

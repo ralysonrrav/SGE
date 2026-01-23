@@ -1,16 +1,17 @@
 
 import React, { useState } from 'react';
-import { Subject, StudyCycle } from '../types';
+import { Subject, StudyCycle, User } from '../types';
 import { BrainCircuit, Loader2, Calendar, Target, Clock, Zap } from 'lucide-react';
 import { generateStudyCycle } from '../services/geminiService';
 
 interface CiclosProps {
+  user: User;
   subjects: Subject[];
   cycle: StudyCycle | null;
   setCycle: React.Dispatch<React.SetStateAction<StudyCycle | null>>;
 }
 
-const Ciclos: React.FC<CiclosProps> = ({ subjects, cycle, setCycle }) => {
+const Ciclos: React.FC<CiclosProps> = ({ user, subjects, cycle, setCycle }) => {
   const [loading, setLoading] = useState(false);
   const [board, setBoard] = useState('Cebraspe');
   const [examDate, setExamDate] = useState('');
@@ -26,8 +27,10 @@ const Ciclos: React.FC<CiclosProps> = ({ subjects, cycle, setCycle }) => {
     setLoading(true);
     try {
       const result = await generateStudyCycle(board, examDate, hoursPerDay, subjects);
+      // Fix: Added missing user_id property required by StudyCycle type
       const newCycle: StudyCycle = {
         id: Date.now().toString(),
+        user_id: user.id,
         board,
         examDate,
         hoursPerDay,
