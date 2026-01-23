@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
-import { Subject } from "../types.ts"; // Lembre-se da extensão .ts se necessário
+import { Subject } from "./types.ts"; // Ajustado para './types.ts' caso o arquivo esteja na mesma pasta raiz
 
 export const generateStudyCycle = async (
   board: string,
@@ -7,10 +7,15 @@ export const generateStudyCycle = async (
   hoursPerDay: number,
   subjects: Subject[]
 ) => {
-  // Inicialização correta usando a variável de ambiente configurada na Vercel
-  const genAI = new GoogleGenerativeAI(import.meta.env.VITE_API_KEY);
+  const apiKey = import.meta.env.VITE_API_KEY;
+
+  // Validação preventiva para evitar erros de execução no navegador
+  if (!apiKey) {
+    throw new Error("A chave de API (VITE_API_KEY) não foi encontrada nas configurações da Vercel.");
+  }
+
+  const genAI = new GoogleGenerativeAI(apiKey);
   
-  // Resumo das disciplinas para o prompt
   const subjectsSummary = subjects.map(s => `${s.name} (${s.topics.length} tópicos)`).join(", ");
   
   const prompt = `
@@ -35,7 +40,6 @@ export const generateStudyCycle = async (
   `;
 
   try {
-    // Configuração do modelo com Schema de Resposta para garantir o JSON correto
     const model = genAI.getGenerativeModel({
       model: "gemini-1.5-flash",
       generationConfig: {
@@ -70,18 +74,18 @@ export const generateStudyCycle = async (
       }
     });
 
-    // Chamada corrigida para o SDK v1+
     const result = await model.generateContent(prompt);
     const response = await result.response;
-    const text = response.text(); // O método .text() é assíncrono agora
+    const text = response.text(); 
 
     if (!text) {
-      throw new Error("Resposta vazia da API do Gemini");
+      throw new Error("Resposta vazia da API do Gemini.");
     }
 
     return JSON.parse(text.trim());
-  } catch (error) {
+  } catch (error: any) {
+    // Captura erros específicos de cotação ou chave inválida
     console.error("Erro detalhado na geração do ciclo:", error);
-    throw error;
+    throw new Error(error.message || "Falha na comunicação com a IA.");
   }
 };
