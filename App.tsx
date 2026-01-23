@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Home, 
   BookOpen, 
@@ -37,6 +37,9 @@ const App: React.FC = () => {
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const loggingOutRef = useRef(false); // Trava de segurança para o listener de auth
+  
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('theme');
     return saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -58,14 +61,14 @@ const App: React.FC = () => {
   const colors = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6'];
 
   const fetchUserData = useCallback(async () => {
-    if (!supabase) return;
+    if (!supabase || loggingOutRef.current) return;
     try {
       const { data: subData } = await supabase
         .from('subjects')
         .select('*')
         .order('created_at', { ascending: true });
       
-      if (subData) {
+      if (subData && !loggingOutRef.current) {
         setSubjects(subData.map((s, index) => ({
           ...s,
           id: String(s.id),
@@ -79,7 +82,7 @@ const App: React.FC = () => {
         .select('*')
         .order('date', { ascending: false });
 
-      if (mockData) {
+      if (mockData && !loggingOutRef.current) {
         setMocks(mockData.map(m => ({
           ...m,
           id: String(m.id),
@@ -93,10 +96,10 @@ const App: React.FC = () => {
   }, [colors]);
 
   const fetchAllUsers = useCallback(async () => {
-    if (!supabase) return;
+    if (!supabase || loggingOutRef.current) return;
     try {
       const { data: profiles } = await supabase.from('profiles').select('*');
-      if (profiles) {
+      if (profiles && !loggingOutRef.current) {
         setAllUsers(profiles.map(p => ({
           id: String(p.id),
           name: p.name || 'Sem nome',
@@ -129,10 +132,9 @@ const App: React.FC = () => {
         return;
       }
 
-      // Check initial session
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        if (isMounted && session?.user) {
+        if (isMounted && session?.user && !loggingOutRef.current) {
           const isAdmin = session.user.email === 'ralysonriccelli@gmail.com';
           setUser({
             id: session.user.id,
@@ -152,9 +154,8 @@ const App: React.FC = () => {
         if (isMounted) setIsLoaded(true);
       }
 
-      // Setup listener
       const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-        if (!isMounted) return;
+        if (!isMounted || loggingOutRef.current) return;
         
         if (session?.user) {
           const isAdmin = session.user.email === 'ralysonriccelli@gmail.com';
@@ -169,10 +170,12 @@ const App: React.FC = () => {
           });
           fetchUserData();
           if (isAdmin) fetchAllUsers();
-        } else if (event === 'SIGNED_OUT') {
+        } else if (event === 'SIGNED_OUT' || !session) {
           setUser(null);
           setSubjects([]);
           setMocks([]);
+          setAllUsers([]);
+          setCurrentPage('inicio');
         }
       });
       
@@ -188,27 +191,53 @@ const App: React.FC = () => {
   }, [fetchUserData, fetchAllUsers]);
 
   const handleLogout = async () => {
-    if (supabase) {
-      try {
-        await supabase.auth.signOut();
-      } catch (e) {
-        console.error("Erro ao sair:", e);
-      }
-    }
+    if (isLoggingOut) return;
+
+    loggingOutRef.current = true;
+    setIsLoggingOut(true);
+    
+    // UI Limpeza imediata do estado
     setUser(null);
     setSubjects([]);
     setMocks([]);
+    setAllUsers([]);
     setCurrentPage('inicio');
+
+    try {
+      if (supabase) {
+        // Encerra sessão no Supabase
+        await supabase.auth.signOut();
+      }
+    } catch (e) {
+      console.error("Erro durante signOut:", e);
+    } finally {
+      // Limpeza profunda de qualquer resquício de storage do Supabase
+      // Isso remove tokens que poderiam disparar o login automático indesejado
+      Object.keys(localStorage).forEach(key => {
+        if (key.includes('sb-') || key.includes('supabase.auth.token')) {
+          localStorage.removeItem(key);
+        }
+      });
+
+      // Pequeno delay para garantir que o ciclo de eventos do browser processe as limpezas
+      setTimeout(() => {
+        setIsLoggingOut(false);
+        loggingOutRef.current = false;
+        setIsSidebarOpen(false);
+      }, 500);
+    }
   };
 
-  if (!isLoaded) {
+  if (!isLoaded || isLoggingOut) {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center">
         <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-2xl animate-bounce mb-6">
           <Award size={32} />
         </div>
         <Loader2 className="animate-spin text-indigo-600 dark:text-indigo-400" size={24} />
-        <p className="mt-4 text-slate-500 font-bold uppercase text-[10px] tracking-widest">Sincronizando Dados...</p>
+        <p className="mt-4 text-slate-500 font-bold uppercase text-[10px] tracking-widest">
+          {isLoggingOut ? 'Encerrando sua Sessão...' : 'Sincronizando Dados...'}
+        </p>
       </div>
     );
   }
@@ -291,7 +320,14 @@ const App: React.FC = () => {
                 <button onClick={() => setIsDarkMode(false)} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl transition-all ${!isDarkMode ? 'bg-white text-indigo-600 shadow-md font-black' : 'text-slate-400 dark:text-slate-500'}`}><Sun size={16} /></button>
                 <button onClick={() => setIsDarkMode(true)} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl transition-all ${isDarkMode ? 'bg-slate-800 text-indigo-400 shadow-md font-black' : 'text-slate-400 dark:text-slate-500'}`}><Moon size={16} /></button>
              </div>
-             <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-rose-500 font-bold text-xs p-3 hover:bg-rose-50 rounded-xl transition-all"><LogOut size={16} /> Sair</button>
+             <button 
+              onClick={handleLogout} 
+              disabled={isLoggingOut}
+              className="w-full flex items-center justify-center gap-2 text-rose-500 font-black text-xs p-3 hover:bg-rose-50 dark:hover:bg-rose-900/10 rounded-xl transition-all disabled:opacity-50"
+             >
+               {isLoggingOut ? <Loader2 className="animate-spin" size={16} /> : <LogOut size={16} />}
+               Sair do App
+             </button>
           </div>
         </div>
       </aside>

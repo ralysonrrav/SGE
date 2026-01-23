@@ -30,7 +30,9 @@ export const supabase = (isValidUrl(supabaseUrl) && supabaseAnonKey)
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: true,
-        flowType: 'pkce'
+        flowType: 'pkce',
+        storage: window.localStorage,
+        storageKey: 'sb-studyflow-auth' // Chave personalizada para facilitar a limpeza
       },
       global: {
         headers: { 'x-application-name': 'studyflow' }
@@ -41,5 +43,5 @@ export const supabase = (isValidUrl(supabaseUrl) && supabaseAnonKey)
 if (!supabase) {
   console.error("ERRO CRÍTICO: Não foi possível inicializar o cliente Supabase. Verifique a URL:", supabaseUrl);
 } else {
-  console.log("Supabase (LOG): Cliente autenticado com sucesso em", supabaseUrl);
+  console.log("Supabase (LOG): Cliente autenticado com sucesso.");
 }
