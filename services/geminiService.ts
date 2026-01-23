@@ -8,7 +8,8 @@ export const generateStudyCycle = async (
   hoursPerDay: number,
   subjects: Subject[]
 ) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // A inicialização deve ser feita dentro da função para garantir que process.env.API_KEY esteja disponível
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
   
   const subjectsSummary = subjects.map(s => `${s.name} (${s.topics.length} tópicos)`).join(", ");
   
