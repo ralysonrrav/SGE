@@ -1,13 +1,12 @@
-
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Concurseiro Pro AI - Planejamento Inteligente</title>
+    
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        // Configura o Tailwind para usar a estratégia de classe para o modo escuro
         tailwind.config = {
             darkMode: 'class',
             theme: {
@@ -19,27 +18,17 @@
             }
         }
     </script>
+    
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; }
-        /* Transição suave para cores de fundo e texto ao trocar de tema */
         * { transition: background-color 0.3s ease, border-color 0.3s ease, color 0.1s ease; }
     </style>
-<script type="importmap">
-{
-  "imports": {
-    "@google/genai": "https://esm.sh/@google/genai@^1.38.0",
-    "recharts": "https://esm.sh/recharts@^3.7.0",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3"
-  }
-}
-</script>
-</head>
+
+    </head>
 <body class="bg-slate-50 text-slate-900 transition-colors duration-300">
     <div id="root"></div>
-    <script type="module" src="/index.tsx"></script> 
+    
+    <script type="module" src="./index.tsx"></script> 
 </body>
 </html>
