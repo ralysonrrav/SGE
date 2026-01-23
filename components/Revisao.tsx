@@ -9,7 +9,8 @@ import {
 interface RevisaoProps {
   subjects: Subject[];
   setSubjects: React.Dispatch<React.SetStateAction<Subject[]>>;
-  onAddLog: (minutes: number, topicId: string, subjectId: string) => void;
+  // Fix: Added date argument to match addStudyLog signature in App.tsx (Expected 4 arguments)
+  onAddLog: (minutes: number, topicId: string, subjectId: string, date: string) => void;
 }
 
 const Revisao: React.FC<RevisaoProps> = ({ subjects, setSubjects, onAddLog }) => {
@@ -55,7 +56,8 @@ const Revisao: React.FC<RevisaoProps> = ({ subjects, setSubjects, onAddLog }) =>
         revisionsDone: Array.from(new Set([...(t.revisionsDone || []), selectedMilestone]))
       } : t)
     } : s));
-    if (editMinutes > 0) onAddLog(editMinutes, topicId, subjectId);
+    // Fix: Provided current ISO date to satisfy the 4th argument requirement of onAddLog
+    if (editMinutes > 0) onAddLog(editMinutes, topicId, subjectId, new Date().toISOString());
     setEditingTopicId(null);
   };
 

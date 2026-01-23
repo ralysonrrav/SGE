@@ -4,7 +4,7 @@ import { User } from '../types';
 import { supabase } from '../lib/supabase';
 import { 
   ShieldCheck, Award, Lock, Mail, User as UserIcon, Info, 
-  RefreshCw, Sparkles, HelpCircle, Terminal
+  RefreshCw, Sparkles, HelpCircle, Terminal, Eye
 } from 'lucide-react';
 
 interface LoginProps {
@@ -24,11 +24,12 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister }) => {
   const [error, setError] = useState<{ msg: string; type: 'error' | 'warning' | 'info' | 'success'; code?: string } | null>(null);
 
   const handleDemoAccess = () => {
+    // Role: 'visitor' garante que a UI mostre os banners de demo e desabilite saves.
     const demoUser: User = {
-      id: 'demo-user',
-      name: 'Usuário Demo (Teste)',
+      id: 'demo-visitor-id',
+      name: 'Visitante (Demo)',
       email: 'demo@studyflow.com',
-      role: 'student',
+      role: 'visitor',
       status: 'active',
       isOnline: true,
       weeklyGoal: 20
@@ -110,14 +111,13 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister }) => {
         if (signInError) throw signInError;
         
         if (data.session && data.user) {
-          setError({ msg: "Login realizado! Carregando painel...", type: 'success' });
-          // O tempo de delay ajuda a ver o feedback antes da transição de tela
+          setError({ msg: "Privilégios Verificados! Carregando painel...", type: 'success' });
+          
           setTimeout(() => {
             onLogin({
               id: data.user!.id,
               name: data.user!.user_metadata?.full_name || 'Usuário',
               email: data.user!.email!,
-              // Fix: Changed 'admin' to 'administrator' to match User role type
               role: data.user!.email === 'ralysonriccelli@gmail.com' ? 'administrator' : 'student',
               status: 'active',
               isOnline: true
@@ -147,7 +147,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister }) => {
             {mode === 'register' ? 'Criar Conta' : mode === 'forgot' ? 'Recuperar Acesso' : 'StudyFlow'}
           </h1>
           <p className="text-slate-500 dark:text-slate-400 mt-2 font-medium">
-            Sua plataforma de estudos inteligente
+            Painel de Controle Inteligente
           </p>
         </div>
 
@@ -168,7 +168,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister }) => {
           {mode === 'register' && (
             <div className="relative group">
               <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={18} />
-              <input type="text" required className="w-full pl-12 pr-4 py-4 rounded-2xl border border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-indigo-500 bg-slate-50 dark:bg-slate-950 dark:text-white outline-none font-bold transition-all" placeholder="Seu Nome" value={name} onChange={(e) => setName(e.target.value)} />
+              <input type="text" required className="w-full pl-12 pr-4 py-4 rounded-2xl border border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-indigo-500 bg-slate-50 dark:bg-slate-950 dark:text-white outline-none font-bold transition-all" placeholder="Seu Nome Completo" value={name} onChange={(e) => setName(e.target.value)} />
             </div>
           )}
           <div className="relative group">
@@ -179,14 +179,14 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister }) => {
           {mode !== 'forgot' && (
             <div className="relative group">
               <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={18} />
-              <input type="password" required className="w-full pl-12 pr-4 py-4 rounded-2xl border border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-indigo-500 bg-slate-50 dark:bg-slate-950 dark:text-white outline-none font-bold transition-all" placeholder="Sua Senha" value={password} onChange={(e) => setPassword(e.target.value)} />
+              <input type="password" required className="w-full pl-12 pr-4 py-4 rounded-2xl border border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-indigo-500 bg-slate-50 dark:bg-slate-950 dark:text-white outline-none font-bold transition-all" placeholder="Senha" value={password} onChange={(e) => setPassword(e.target.value)} />
             </div>
           )}
 
           {mode === 'register' && (
             <div className="relative group">
               <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={18} />
-              <input type="password" required className="w-full pl-12 pr-4 py-4 rounded-2xl border border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-indigo-500 bg-slate-50 dark:bg-slate-950 dark:text-white outline-none font-bold transition-all" placeholder="Confirmar Senha" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
+              <input type="password" required className="w-full pl-12 pr-4 py-4 rounded-2xl border border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-indigo-500 bg-slate-50 dark:bg-slate-950 dark:text-white outline-none font-bold transition-all" placeholder="Repetir Senha" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
             </div>
           )}
 
@@ -196,32 +196,32 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister }) => {
             className={`w-full text-white font-black py-5 rounded-2xl transition-all shadow-xl bg-indigo-600 hover:bg-indigo-700 transform active:scale-[0.98] flex items-center justify-center gap-3 ${loading ? 'opacity-80 cursor-not-allowed' : ''}`}
           >
             {loading && <RefreshCw className="animate-spin" size={18} />}
-            {loading ? 'CARREGANDO...' : (mode === 'register' ? 'CRIAR MINHA CONTA' : mode === 'forgot' ? 'REDEFINIR SENHA' : 'ACESSAR MINHA CONTA')}
+            {loading ? 'SINCRONIZANDO...' : (mode === 'register' ? 'CRIAR MINHA CONTA' : mode === 'forgot' ? 'ENVIAR LINK DE RECUPERAÇÃO' : 'ENTRAR NO PAINEL')}
           </button>
         </form>
 
         <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-4">
           <button onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(null); setShowHelp(false); }} className="text-indigo-600 dark:text-indigo-400 text-sm font-bold hover:underline">
-            {mode === 'login' ? 'Não tem conta? Cadastre-se grátis' : 'Já tem conta? Faça Login'}
+            {mode === 'login' ? 'Novo por aqui? Criar conta grátis' : 'Já possui cadastro? Acessar'}
           </button>
 
           <div className="flex items-center justify-between">
-             <button type="button" onClick={() => setMode('forgot')} className="text-xs font-bold text-slate-400 hover:text-indigo-500">Esqueceu sua senha?</button>
-             <button type="button" onClick={() => setShowHelp(!showHelp)} className="text-[10px] font-black uppercase text-slate-300 flex items-center gap-1"><HelpCircle size={10} /> Ajuda</button>
+             <button type="button" onClick={() => setMode('forgot')} className="text-xs font-bold text-slate-400 hover:text-indigo-500">Recuperar senha</button>
+             <button type="button" onClick={() => setShowHelp(!showHelp)} className="text-[10px] font-black uppercase text-slate-300 flex items-center gap-1 hover:text-indigo-500 transition-colors"><HelpCircle size={10} /> Suporte</button>
           </div>
 
           <div className="relative flex items-center gap-4 py-2">
             <div className="flex-1 h-px bg-slate-100 dark:bg-slate-800"></div>
-            <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">OU</span>
+            <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">OU EXPLORE</span>
             <div className="flex-1 h-px bg-slate-100 dark:bg-slate-800"></div>
           </div>
 
           <button 
             onClick={handleDemoAccess}
-            className="w-full flex items-center justify-center gap-3 py-4 rounded-2xl border-2 border-indigo-50 dark:border-slate-800 text-indigo-600 dark:text-indigo-400 font-black text-xs hover:bg-indigo-50 dark:hover:bg-slate-800 transition-all group"
+            className="w-full flex items-center justify-center gap-3 py-4 rounded-2xl border-2 border-amber-50 dark:border-slate-800 text-amber-600 dark:text-amber-500 font-black text-xs hover:bg-amber-50 dark:hover:bg-amber-900/10 transition-all group shadow-sm"
           >
-            <Sparkles size={16} className="group-hover:animate-pulse" />
-            ENTRAR COMO VISITANTE (TESTE)
+            <Eye size={16} className="group-hover:scale-110 transition-transform" />
+            MODO VISITANTE (DEGUSTAÇÃO)
           </button>
         </div>
       </div>

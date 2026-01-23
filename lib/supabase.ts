@@ -33,20 +33,23 @@ export const supabase = (isValidUrl(supabaseUrl) && supabaseAnonKey)
   : null;
 
 /**
- * Utilitário para verificar se um erro é decorrente de falha de conexão/rede.
- * Isso silencia o erro "Failed to fetch" que ocorre quando o Supabase está inacessível.
+ * Utilitário sênior para verificar erros de rede.
+ * Captura especificamente 'Failed to fetch' que ocorre em sandboxes ou bloqueios de rede.
  */
 export const isNetworkError = (error: any): boolean => {
   if (!error) return false;
   const message = error.message?.toLowerCase() || "";
   const name = error.name || "";
+  const code = error.code || "";
+  
   return (
     name === 'TypeError' || 
     message.includes('fetch') || 
     message.includes('network') || 
+    message.includes('failed to fetch') ||
     message.includes('load failed') ||
     message.includes('failed to connect') ||
-    error.code === 'PGRST301' || // JWT expired/network transition
+    code === 'PGRST301' || 
     !navigator.onLine
   );
 };

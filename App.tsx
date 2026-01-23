@@ -1,24 +1,12 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { 
-  Home, 
-  BookOpen, 
-  RefreshCcw, 
-  Calendar, 
-  BarChart2, 
-  LogOut, 
-  Menu, 
-  X,
-  BrainCircuit,
-  Award,
-  Sun,
-  Moon,
-  Users,
-  Database,
-  Loader2
+  Home, BookOpen, RefreshCcw, Calendar, BarChart2, LogOut, Menu, X,
+  BrainCircuit, Award, Sun, Moon, Users, Database, Loader2, ShieldCheck, 
+  Eye, Settings, WifiOff, CloudSync, User as UserIcon, Sparkles
 } from 'lucide-react';
 import { User, Subject, MockExam, StudyCycle, StudySession, PredefinedEdital } from './types';
-import { supabase } from './lib/supabase';
+import { supabase, isNetworkError } from './lib/supabase';
 import Login from './components/Login';
 import Disciplinas from './components/Disciplinas';
 import Ciclos from './components/Ciclos';
@@ -26,6 +14,7 @@ import Revisao from './components/Revisao';
 import Simulados from './components/Simulados';
 import Dashboard from './components/Dashboard';
 import Admin from './components/Admin';
+import Profile from './components/Profile';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -38,6 +27,9 @@ const App: React.FC = () => {
   const [isLoaded, setIsLoaded] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [isOffline, setIsOffline] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const loggingOutRef = useRef(false);
   
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -58,44 +50,61 @@ const App: React.FC = () => {
     }
   ]);
 
-  const colors = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6'];
-
-  const fetchUserData = useCallback(async () => {
-    if (!supabase || loggingOutRef.current) return;
-    try {
-      const { data: subData } = await supabase.from('subjects').select('*').order('created_at', { ascending: true });
-      if (subData) {
-        setSubjects(subData.map((s, index) => ({
-          ...s,
-          id: String(s.id),
-          topics: s.topics || [],
-          color: colors[index % colors.length]
-        })));
-      }
-
-      const { data: mockData } = await supabase.from('mocks').select('*').order('date', { ascending: false });
-      if (mockData) setMocks(mockData.map(m => ({ ...m, id: String(m.id) })));
-
-      const { data: logData } = await supabase.from('study_logs').select('*').order('date', { ascending: false });
-      if (logData) setStudyLogs(logData.map(l => ({ ...l, id: String(l.id) })));
-
-    } catch (e) {
-      console.error("Erro ao buscar dados do usuário:", e);
-    }
+  const saveToLocal = useCallback((key: string, data: any) => {
+    localStorage.setItem(`sf_cache_${key}`, JSON.stringify(data));
   }, []);
 
-  const addStudyLog = async (minutes: number, topicId: string, subjectId: string) => {
+  const loadFromLocal = useCallback((key: string) => {
+    const data = localStorage.getItem(`sf_cache_${key}`);
+    return data ? JSON.parse(data) : null;
+  }, []);
+
+  const fetchUserData = useCallback(async (userId: string) => {
+    const cachedSubjects = loadFromLocal('subjects');
+    const cachedMocks = loadFromLocal('mocks');
+    const cachedLogs = loadFromLocal('logs');
+
+    if (cachedSubjects) setSubjects(cachedSubjects);
+    if (cachedMocks) setMocks(cachedMocks);
+    if (cachedLogs) setStudyLogs(cachedLogs);
+
     if (!supabase || loggingOutRef.current) return;
-    const newLog = { minutes, topicId, subjectId, date: new Date().toISOString(), type: 'estudo' };
+
+    setIsSyncing(true);
     try {
-      const { data, error } = await supabase.from('study_logs').insert([newLog]).select().single();
-      if (!error && data) {
-        setStudyLogs(prev => [{ ...data, id: String(data.id) }, ...prev]);
+      const [subRes, mockRes, logRes] = await Promise.all([
+        supabase.from('subjects').select('*').order('created_at', { ascending: true }),
+        supabase.from('mocks').select('*').order('date', { ascending: false }),
+        supabase.from('study_logs').select('*').order('date', { ascending: false })
+      ]);
+
+      if (subRes.data) {
+        const mapped = subRes.data.map((s, i) => ({
+          ...s, id: String(s.id), topics: s.topics || [],
+          color: s.color || ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'][i % 5]
+        }));
+        setSubjects(mapped);
+        saveToLocal('subjects', mapped);
       }
-    } catch (e) {
-      console.error("Erro ao salvar log de estudo:", e);
+
+      if (mockRes.data) {
+        const mapped = mockRes.data.map(m => ({ ...m, id: String(m.id) }));
+        setMocks(mapped);
+        saveToLocal('mocks', mapped);
+      }
+
+      if (logRes.data) {
+        const mapped = logRes.data.map(l => ({ ...l, id: String(l.id) }));
+        setStudyLogs(mapped);
+        saveToLocal('logs', mapped);
+      }
+      setIsOffline(false);
+    } catch (e: any) {
+      if (isNetworkError(e)) setIsOffline(true);
+    } finally {
+      setIsSyncing(false);
     }
-  };
+  }, [loadFromLocal, saveToLocal]);
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -106,112 +115,202 @@ const App: React.FC = () => {
 
   useEffect(() => {
     let isMounted = true;
-    const initializeAuth = async () => {
+    const init = async () => {
       if (!supabase) { setIsLoaded(true); return; }
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (isMounted && session?.user) {
-          const isAdmin = session.user.email === 'ralysonriccelli@gmail.com';
-          setUser({
+          const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+          
+          const newUser: User = {
             id: session.user.id,
-            name: session.user.user_metadata?.full_name || 'Usuário',
+            name: profile?.full_name || session.user.user_metadata?.full_name || 'Usuário',
             email: session.user.email!,
-            role: isAdmin ? 'administrator' : 'student',
-            status: 'active',
+            role: profile?.role || (session.user.email === 'ralysonriccelli@gmail.com' ? 'administrator' : 'student'),
+            status: profile?.status || 'active',
             isOnline: true,
-            weeklyGoal: session.user.user_metadata?.weekly_goal || 20
-          });
-          fetchUserData();
+            weeklyGoal: profile?.weekly_goal || 20
+          };
+          
+          if (newUser.status === 'blocked') {
+            await supabase.auth.signOut();
+            alert("Sua conta está bloqueada. Entre em contato com o suporte.");
+            return;
+          }
+
+          setUser(newUser);
+          fetchUserData(session.user.id);
+          
+          if (newUser.role === 'administrator') {
+            const { data: profiles } = await supabase.from('profiles').select('*');
+            if (profiles) setAllUsers(profiles);
+          }
         }
+      } catch (e) {
+        console.warn("Offline initialization active.");
       } finally { if (isMounted) setIsLoaded(true); }
     };
-    initializeAuth();
+    init();
+    return () => { isMounted = false; };
   }, [fetchUserData]);
+
+  const addStudyLog = useCallback(async (minutes: number, topicId: string, subjectId: string, date: string) => {
+    const newEntry: StudySession = { 
+      id: `local-${Date.now()}`, 
+      minutes, 
+      topicId, 
+      subjectId, 
+      date: date, // Usando a data passada pelo modal
+      type: 'estudo' 
+    };
+
+    setStudyLogs(prev => {
+      const up = [newEntry, ...prev];
+      saveToLocal('logs', up);
+      return up;
+    });
+
+    if (user?.role === 'visitor' || !supabase) return;
+
+    try {
+      await supabase.from('study_logs').insert([{
+        minutes, 
+        topic_id: topicId, 
+        subject_id: subjectId, 
+        date: date, 
+        type: 'estudo'
+      }]);
+    } catch (e) {
+      if (isNetworkError(e)) setIsOffline(true);
+    }
+  }, [user, saveToLocal]);
 
   const handleLogout = async () => {
     loggingOutRef.current = true;
     setIsLoggingOut(true);
     if (supabase) await supabase.auth.signOut();
+    localStorage.clear();
     setUser(null);
-    setSubjects([]);
-    setMocks([]);
     setIsLoggingOut(false);
     loggingOutRef.current = false;
   };
 
+  const navItems = useMemo(() => [
+    { id: 'inicio', label: 'Dashboard', icon: <Home size={20} />, roles: ['administrator', 'student', 'visitor'] },
+    { id: 'disciplinas', label: 'Edital Vertical', icon: <BookOpen size={20} />, roles: ['administrator', 'student', 'visitor'] },
+    { id: 'ciclos', label: 'Mentoria IA', icon: <BrainCircuit size={20} />, roles: ['administrator', 'student', 'visitor'] },
+    { id: 'revisao', label: 'Revisões', icon: <RefreshCcw size={20} />, roles: ['administrator', 'student', 'visitor'] },
+    { id: 'simulados', label: 'Simulados', icon: <BarChart2 size={20} />, roles: ['administrator', 'student', 'visitor'] },
+    { id: 'admin_users', label: 'Comunidade', icon: <Users size={20} />, roles: ['administrator'] },
+    { id: 'admin_editais', label: 'Master Editais', icon: <Settings size={20} />, roles: ['administrator'] },
+  ].filter(item => item.roles.includes(user?.role || '')), [user]);
+
   if (!isLoaded || isLoggingOut) {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center">
-        <Loader2 className="animate-spin text-indigo-600 mb-4" size={48} />
-        <p className="text-slate-500 font-black uppercase text-[10px] tracking-widest">Sincronizando Ecossistema...</p>
+        <div className="relative mb-8">
+          <div className="w-24 h-24 rounded-[2rem] bg-indigo-600/10 flex items-center justify-center animate-pulse">
+            <Loader2 className="animate-spin text-indigo-600" size={48} strokeWidth={1.5} />
+          </div>
+          <Award className="absolute -top-2 -right-2 text-indigo-500" size={24} />
+        </div>
+        <p className="text-slate-500 font-black uppercase text-[10px] tracking-[0.4em] animate-pulse">Protocolo de Segurança Ativo</p>
       </div>
     );
   }
 
-  if (!user) {
-    return <Login users={allUsers} onLogin={(u) => { setUser(u); fetchUserData(); }} onRegister={(u) => { setUser(u); fetchUserData(); }} />;
-  }
-
-  const renderPage = () => {
-    switch (currentPage) {
-      case 'inicio': return <Dashboard subjects={subjects} mocks={mocks} cycle={cycle} studyLogs={studyLogs} weeklyGoal={user.weeklyGoal || 20} onUpdateGoal={() => {}} isDarkMode={isDarkMode} />;
-      case 'disciplinas': return <Disciplinas subjects={subjects} setSubjects={setSubjects} predefinedEditais={editais} onAddLog={addStudyLog} />;
-      case 'ciclos': return <Ciclos subjects={subjects} setCycle={setCycle} cycle={cycle} />;
-      case 'revisao': return <Revisao subjects={subjects} setSubjects={setSubjects} onAddLog={addStudyLog} />;
-      case 'simulados': return <Simulados mocks={mocks} setMocks={setMocks} subjects={subjects} />;
-      case 'admin_users': return <Admin users={allUsers} setUsers={setAllUsers} editais={editais} setEditais={setEditais} view="users" />;
-      case 'admin_editais': return <Admin users={allUsers} setUsers={setAllUsers} editais={editais} setEditais={setEditais} view="editais" />;
-      default: return <Dashboard subjects={subjects} mocks={mocks} cycle={cycle} studyLogs={studyLogs} weeklyGoal={user.weeklyGoal || 20} onUpdateGoal={() => {}} isDarkMode={isDarkMode} />;
-    }
-  };
+  if (!user) return <Login users={allUsers} onLogin={(u) => { setUser(u); fetchUserData(u.id); }} onRegister={(u) => { setUser(u); fetchUserData(u.id); }} />;
 
   return (
-    <div className="flex h-screen bg-white dark:bg-slate-950 overflow-hidden">
-      <button className="md:hidden fixed top-6 left-6 z-50 p-3 bg-indigo-600 text-white rounded-2xl shadow-xl" onClick={() => setIsSidebarOpen(!isSidebarOpen)}>
+    <div className="flex h-screen bg-white dark:bg-slate-950 overflow-hidden selection:bg-indigo-100 selection:text-indigo-900">
+      <div className="fixed top-0 left-0 right-0 z-[100] pointer-events-none">
+        {isOffline && (
+          <div className="bg-rose-600 text-white text-[9px] font-black uppercase tracking-[0.4em] py-1 text-center flex items-center justify-center gap-3 shadow-2xl pointer-events-auto">
+            <WifiOff size={10} /> MODO LOCAL: SINCRONIZAÇÃO PAUSADA
+          </div>
+        )}
+        {isSyncing && !isOffline && (
+          <div className="bg-indigo-600 text-white text-[9px] font-black uppercase tracking-[0.4em] py-1 text-center flex items-center justify-center gap-3 pointer-events-auto">
+            <CloudSync size={10} className="animate-bounce" /> ATUALIZANDO ECOSSISTEMA
+          </div>
+        )}
+      </div>
+
+      <button 
+        className={`md:hidden fixed z-[60] p-4 bg-indigo-600 text-white rounded-3xl shadow-2xl transition-all active:scale-90 ${isOffline || isSyncing ? 'top-10 left-6' : 'top-6 left-6'}`} 
+        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+      >
         {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
       </button>
 
-      <aside className={`fixed inset-y-0 left-0 z-40 w-72 bg-slate-50 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transform transition-transform duration-300 md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed inset-y-0 left-0 z-50 w-80 bg-slate-50 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transform transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full shadow-none'}`}>
         <div className="flex flex-col h-full">
-          <div className="p-8 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg"><Award size={28} /></div>
+          <div className="p-10 pt-16 flex items-center gap-5 group cursor-default">
+            <div className="w-14 h-14 rounded-[1.5rem] bg-indigo-600 flex items-center justify-center text-white shadow-2xl shadow-indigo-200 dark:shadow-none transition-transform group-hover:rotate-12">
+              <Sparkles size={32} strokeWidth={1.5} />
+            </div>
             <div>
-              <h1 className="text-xl font-black text-slate-900 dark:text-slate-100 leading-none">StudyFlow</h1>
-              <p className="text-[10px] font-black uppercase tracking-widest mt-1 text-indigo-600">Pro AI</p>
+              <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tighter leading-none">StudyFlow</h1>
+              <p className="text-[9px] font-black uppercase tracking-[0.3em] mt-1.5 text-indigo-500">Lógica de Aprovação</p>
             </div>
           </div>
           
-          <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
-            {[
-              { id: 'inicio', label: 'Início', icon: <Home size={18} /> },
-              { id: 'disciplinas', label: 'Edital Vertical', icon: <BookOpen size={18} /> },
-              { id: 'ciclos', label: 'Ciclos IA', icon: <BrainCircuit size={18} /> },
-              { id: 'revisao', label: 'Revisões 7/15/30', icon: <RefreshCcw size={18} /> },
-              { id: 'simulados', label: 'Simulados', icon: <BarChart2 size={18} /> },
-            ].map((item) => (
-              <button key={item.id} onClick={() => { setCurrentPage(item.id); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-bold transition-all ${currentPage === item.id ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'}`}>
-                {item.icon} {item.label}
+          <nav className="flex-1 px-6 py-4 space-y-2.5 overflow-y-auto">
+            {navItems.map((item) => (
+              <button 
+                key={item.id} 
+                onClick={() => { setCurrentPage(item.id); setIsSidebarOpen(false); }} 
+                className={`w-full flex items-center gap-4 px-6 py-4.5 rounded-[1.25rem] text-[11px] font-black uppercase tracking-wider transition-all duration-300 ${currentPage === item.id ? 'bg-indigo-600 text-white shadow-2xl shadow-indigo-100 dark:shadow-none translate-x-2' : 'text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:text-indigo-600'}`}
+              >
+                <div className={`${currentPage === item.id ? 'text-white' : 'text-indigo-500'}`}>{item.icon}</div> 
+                {item.label}
               </button>
             ))}
           </nav>
 
-          <div className="p-6 border-t border-slate-200 dark:border-slate-800 space-y-4">
-             <div className="bg-slate-200 dark:bg-slate-950 p-1 rounded-2xl flex items-center">
-                <button onClick={() => setIsDarkMode(false)} className={`flex-1 flex items-center justify-center py-2 rounded-xl transition-all ${!isDarkMode ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}><Sun size={16} /></button>
-                <button onClick={() => setIsDarkMode(true)} className={`flex-1 flex items-center justify-center py-2 rounded-xl transition-all ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'text-slate-400'}`}><Moon size={16} /></button>
+          <div className="p-8 border-t border-slate-200 dark:border-slate-800 space-y-6">
+             <div className="bg-slate-200/50 dark:bg-slate-950 p-1.5 rounded-2xl flex items-center">
+                <button onClick={() => setIsDarkMode(false)} className={`flex-1 flex items-center justify-center py-2.5 rounded-xl transition-all ${!isDarkMode ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-400'}`}><Sun size={18} /></button>
+                <button onClick={() => setIsDarkMode(true)} className={`flex-1 flex items-center justify-center py-2.5 rounded-xl transition-all ${isDarkMode ? 'bg-slate-800 text-indigo-400 shadow-md' : 'text-slate-400'}`}><Moon size={18} /></button>
              </div>
-             <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-rose-500 font-black text-xs p-3 hover:bg-rose-50 rounded-xl transition-all">
-               <LogOut size={16} /> Sair do App
+             
+             <button 
+               onClick={() => setIsProfileOpen(true)}
+               className="w-full p-4.5 bg-white dark:bg-slate-800 rounded-[1.5rem] border border-slate-100 dark:border-slate-700 transition-all hover:shadow-xl group"
+             >
+               <div className="flex items-center gap-4">
+                 <div className="w-11 h-11 rounded-2xl bg-indigo-50 dark:bg-slate-950 flex items-center justify-center text-indigo-600 font-black text-sm border border-indigo-100 dark:border-slate-800 group-hover:bg-indigo-600 group-hover:text-white transition-all">
+                   {user.name.charAt(0)}
+                 </div>
+                 <div className="min-w-0">
+                   <p className="text-xs font-black text-slate-800 dark:text-slate-200 truncate leading-none">{user.name}</p>
+                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter truncate mt-1.5">{user.role}</p>
+                 </div>
+               </div>
+             </button>
+
+             <button onClick={handleLogout} className="w-full flex items-center justify-center gap-3 text-rose-500 font-black text-[10px] uppercase tracking-widest p-4 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-2xl transition-all">
+               <LogOut size={16} /> Encerrar Sessão
              </button>
           </div>
         </div>
       </aside>
 
-      <main className="flex-1 md:ml-72 overflow-y-auto bg-white dark:bg-slate-950">
-        <div className="max-w-6xl mx-auto p-6 md:p-12">
-          {renderPage()}
+      <main className={`flex-1 md:ml-80 overflow-y-auto bg-white dark:bg-slate-950 transition-all duration-700 ease-in-out ${isOffline || isSyncing ? 'pt-14' : 'pt-0'}`}>
+        <div className="max-w-7xl mx-auto p-8 md:p-16">
+          {currentPage === 'inicio' && <Dashboard subjects={subjects} mocks={mocks} cycle={cycle} studyLogs={studyLogs} weeklyGoal={user.weeklyGoal || 20} onUpdateGoal={() => {}} isDarkMode={isDarkMode} />}
+          {currentPage === 'disciplinas' && <Disciplinas subjects={subjects} setSubjects={setSubjects} predefinedEditais={editais} onAddLog={addStudyLog} />}
+          {currentPage === 'ciclos' && <Ciclos subjects={subjects} setCycle={setCycle} cycle={cycle} />}
+          {currentPage === 'revisao' && <Revisao subjects={subjects} setSubjects={setSubjects} onAddLog={addStudyLog} />}
+          {currentPage === 'simulados' && <Simulados mocks={mocks} setMocks={setMocks} subjects={subjects} />}
+          {currentPage === 'admin_users' && <Admin users={allUsers} setUsers={setAllUsers} editais={editais} setEditais={setEditais} view="users" />}
+          {currentPage === 'admin_editais' && <Admin users={allUsers} setUsers={setAllUsers} editais={editais} setEditais={setEditais} view="editais" />}
         </div>
       </main>
+
+      {isProfileOpen && (
+        <Profile user={user} onUpdate={(u) => { setUser(u); saveToLocal('user', u); }} onDelete={handleLogout} onClose={() => setIsProfileOpen(false)} onExport={() => {}} onImport={() => {}} />
+      )}
     </div>
   );
 };
