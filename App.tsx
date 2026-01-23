@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Home, BookOpen, RefreshCcw, BarChart2, LogOut, Menu, X,
-  BrainCircuit, Award, Sun, Moon, Loader2
+  BrainCircuit, Award, Sun, Moon, Loader2, User as UserIcon
 } from 'lucide-react';
 import { User, Subject, MockExam, StudyCycle, StudySession, PredefinedEdital } from './types';
 import { supabase } from './lib/supabase';
@@ -13,6 +13,7 @@ import Revisao from './components/Revisao';
 import Simulados from './components/Simulados';
 import Dashboard from './components/Dashboard';
 import Admin from './components/Admin';
+import Profile from './components/Profile';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6'];
 
@@ -26,6 +27,7 @@ const App: React.FC = () => {
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('theme');
     return saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -47,56 +49,44 @@ const App: React.FC = () => {
   const fetchUserData = useCallback(async (userId: string) => {
     if (!supabase) return;
     try {
-      // Carregar Matérias
-      const { data: subData } = await supabase
-        .from('subjects')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: true });
-      
-      if (subData) {
-        setSubjects(subData.map((s, index) => ({
-          ...s,
-          id: String(s.id),
-          topics: Array.isArray(s.topics) ? s.topics : [],
-          color: COLORS[index % COLORS.length]
-        })));
-      }
+      const { data: subData } = await supabase.from('subjects').select('*').eq('user_id', userId).order('created_at', { ascending: true });
+      if (subData) setSubjects(subData.map((s, index) => ({ ...s, id: String(s.id), topics: Array.isArray(s.topics) ? s.topics : [], color: COLORS[index % COLORS.length] })));
 
-      // Carregar Simulados
-      const { data: mockData } = await supabase
-        .from('mocks')
-        .select('*')
-        .eq('user_id', userId)
-        .order('date', { ascending: false });
-      
-      if (mockData) {
-        setMocks(mockData.map(m => ({ ...m, id: String(m.id) })));
-      }
+      const { data: mockData } = await supabase.from('mocks').select('*').eq('user_id', userId).order('date', { ascending: false });
+      if (mockData) setMocks(mockData.map(m => ({ ...m, id: String(m.id) })));
 
-      // Carregar Logs
-      const { data: logData } = await supabase
-        .from('study_logs')
-        .select('*')
-        .eq('user_id', userId)
-        .order('date', { ascending: false });
-      
-      if (logData) {
-        setStudyLogs(logData.map(l => ({ ...l, id: String(l.id) })));
-      }
+      const { data: logData } = await supabase.from('study_logs').select('*').eq('user_id', userId).order('date', { ascending: false });
+      if (logData) setStudyLogs(logData.map(l => ({ ...l, id: String(l.id) })));
     } catch (err) {
-      console.error("Erro ao sincronizar dados do usuário:", err);
+      console.error("Erro ao sincronizar dados:", err);
     }
   }, []);
+
+  const handleWipeData = async () => {
+    if (!user || !supabase) return;
+    try {
+      setIsLoaded(false);
+      await supabase.from('subjects').delete().eq('user_id', user.id);
+      await supabase.from('mocks').delete().eq('user_id', user.id);
+      await supabase.from('study_logs').delete().eq('user_id', user.id);
+      
+      setSubjects([]);
+      setMocks([]);
+      setStudyLogs([]);
+      alert("Todos os seus dados foram removidos do banco de dados com sucesso.");
+    } catch (err) {
+      alert("Erro ao limpar dados. Tente novamente.");
+    } finally {
+      setIsLoaded(true);
+      setShowProfile(false);
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
     const init = async () => {
       try {
-        if (!supabase) {
-          setIsLoaded(true);
-          return;
-        }
+        if (!supabase) { setIsLoaded(true); return; }
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user && isMounted) {
           const u: User = {
@@ -111,25 +101,17 @@ const App: React.FC = () => {
           await fetchUserData(session.user.id);
         }
       } catch (err) {
-        console.error("Erro na inicialização:", err);
+        console.error(err);
       } finally {
         if (isMounted) setIsLoaded(true);
       }
     };
-
     init();
 
     const { data: { subscription } } = supabase 
       ? supabase.auth.onAuthStateChange(async (event, session) => {
           if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && session?.user && isMounted) {
-            const u: User = {
-              id: session.user.id,
-              name: session.user.user_metadata?.full_name || 'Usuário',
-              email: session.user.email!,
-              role: session.user.email === 'ralysonriccelli@gmail.com' ? 'admin' : 'student',
-              status: 'active',
-              isOnline: true
-            };
+            const u: User = { id: session.user.id, name: session.user.user_metadata?.full_name || 'Usuário', email: session.user.email!, role: session.user.email === 'ralysonriccelli@gmail.com' ? 'admin' : 'student', status: 'active', isOnline: true };
             setUser(u);
             await fetchUserData(session.user.id);
           } else if (event === 'SIGNED_OUT' && isMounted) {
@@ -137,15 +119,11 @@ const App: React.FC = () => {
             setSubjects([]);
             setMocks([]);
             setStudyLogs([]);
-            setCurrentPage('inicio');
           }
         })
       : { data: { subscription: { unsubscribe: () => {} } } };
 
-    return () => {
-      isMounted = false;
-      subscription.unsubscribe();
-    };
+    return () => { isMounted = false; subscription.unsubscribe(); };
   }, [fetchUserData]);
 
   useEffect(() => {
@@ -154,14 +132,6 @@ const App: React.FC = () => {
     else root.classList.remove('dark');
     localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
   }, [isDarkMode]);
-
-  const handleLogout = async () => {
-    if (supabase) await supabase.auth.signOut();
-    setUser(null);
-    setSubjects([]);
-    setMocks([]);
-    setCurrentPage('inicio');
-  };
 
   if (!isLoaded) {
     return (
@@ -181,18 +151,27 @@ const App: React.FC = () => {
     switch (currentPage) {
       case 'inicio': return <Dashboard subjects={subjects} mocks={mocks} cycle={cycle} studyLogs={studyLogs} weeklyGoal={user.weeklyGoal || 20} onUpdateGoal={() => {}} isDarkMode={isDarkMode} />;
       case 'disciplinas': return <Disciplinas user={user} subjects={subjects} setSubjects={setSubjects} predefinedEditais={editais} onAddLog={() => {}} />;
-      // Fix: Pass user to Ciclos component to satisfy user_id requirement in StudyCycle
       case 'ciclos': return <Ciclos user={user} subjects={subjects} setCycle={setCycle} cycle={cycle} />;
       case 'revisao': return <Revisao subjects={subjects} setSubjects={setSubjects} onAddLog={() => {}} />;
       case 'simulados': return <Simulados user={user} mocks={mocks} setMocks={setMocks} subjects={subjects} />;
       case 'admin_users': return <Admin users={allUsers} setUsers={setAllUsers} editais={editais} setEditais={() => {}} view="users" />;
-      case 'admin_editais': return <Admin users={allUsers} setUsers={setAllUsers} editais={editais} setEditais={() => {}} view="editais" />;
       default: return <Dashboard subjects={subjects} mocks={mocks} cycle={cycle} studyLogs={studyLogs} weeklyGoal={user.weeklyGoal || 20} onUpdateGoal={() => {}} isDarkMode={isDarkMode} />;
     }
   };
 
   return (
     <div className="flex h-screen bg-white dark:bg-slate-950 overflow-hidden transition-colors duration-500">
+      {showProfile && (
+        <Profile 
+          user={user} 
+          onUpdate={(u) => setUser(u)} 
+          onDelete={handleWipeData} 
+          onClose={() => setShowProfile(false)}
+          onExport={() => {}} 
+          onImport={() => {}} 
+        />
+      )}
+
       <button className="md:hidden fixed top-6 left-6 z-50 p-3 bg-indigo-600 text-white rounded-2xl shadow-xl" onClick={() => setIsSidebarOpen(!isSidebarOpen)}>
         {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
       </button>
@@ -222,12 +201,15 @@ const App: React.FC = () => {
             ))}
           </nav>
 
-          <div className="p-6 border-t border-slate-200 dark:border-slate-800">
-             <div className="bg-slate-200 dark:bg-slate-950 p-1 rounded-2xl flex items-center mb-4">
+          <div className="p-6 border-t border-slate-200 dark:border-slate-800 space-y-3">
+             <button onClick={() => setShowProfile(true)} className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 dark:text-slate-400 font-bold text-xs hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-all">
+                <UserIcon size={18} /> Perfil
+             </button>
+             <div className="bg-slate-200 dark:bg-slate-950 p-1 rounded-2xl flex items-center">
                 <button onClick={() => setIsDarkMode(false)} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl transition-all ${!isDarkMode ? 'bg-white text-indigo-600 shadow-md font-black' : 'text-slate-400'}`}><Sun size={16} /></button>
                 <button onClick={() => setIsDarkMode(true)} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl transition-all ${isDarkMode ? 'bg-slate-800 text-indigo-400 shadow-md font-black' : 'text-slate-400'}`}><Moon size={16} /></button>
              </div>
-             <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-rose-500 font-bold text-xs p-3 hover:bg-rose-50 rounded-xl transition-all"><LogOut size={16} /> Sair</button>
+             <button onClick={async () => { if (supabase) await supabase.auth.signOut(); setUser(null); }} className="w-full flex items-center justify-center gap-2 text-rose-500 font-bold text-xs p-3 hover:bg-rose-50 rounded-xl transition-all"><LogOut size={16} /> Sair</button>
           </div>
         </div>
       </aside>
