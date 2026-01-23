@@ -1,24 +1,8 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
-  Home, 
-  BookOpen, 
-  RefreshCcw, 
-  Calendar, 
-  BarChart2, 
-  LogOut, 
-  Menu, 
-  X,
-  BrainCircuit,
-  Award,
-  Sun,
-  Moon,
-  ShieldAlert,
-  Users,
-  Database,
-  Zap,
-  Target,
-  AlertCircle
+  Home, BookOpen, RefreshCcw, Calendar, BarChart2, LogOut, Menu, X,
+  BrainCircuit, Award, Sun, Moon, Users, Database, Loader2
 } from 'lucide-react';
 import { User, Subject, MockExam, StudyCycle, StudySession, PredefinedEdital } from './types';
 import { supabase } from './lib/supabase';
@@ -29,7 +13,6 @@ import Revisao from './components/Revisao';
 import Simulados from './components/Simulados';
 import Dashboard from './components/Dashboard';
 import Admin from './components/Admin';
-import Profile from './components/Profile';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -38,198 +21,138 @@ const App: React.FC = () => {
   const [mocks, setMocks] = useState<MockExam[]>([]);
   const [cycle, setCycle] = useState<StudyCycle | null>(null);
   const [studyLogs, setStudyLogs] = useState<StudySession[]>([]);
-  const [predefinedEditais, setPredefinedEditais] = useState<PredefinedEdital[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
-
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
-  
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('theme');
-    if (saved) return saved === 'dark';
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    return saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
 
-  useEffect(() => {
-    const root = window.document.documentElement;
-    if (isDarkMode) {
-      root.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      root.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
+  const [editais, setEditais] = useState<PredefinedEdital[]>([
+    {
+      id: 'edital-pf-agente',
+      name: 'Agente da Polícia Federal',
+      organization: 'PF / Cebraspe',
+      lastUpdated: new Date().toISOString(),
+      subjects: [
+        { id: 'pf-1', name: 'Português', color: '#6366f1', topics: [{ id: 't1', title: 'Compreensão de textos', completed: false, importance: 5 }] },
+        { id: 'pf-2', name: 'Informática', color: '#10b981', topics: [{ id: 't3', title: 'Segurança da Informação', completed: false, importance: 5 }] }
+      ]
     }
-  }, [isDarkMode]);
+  ]);
+
+  const colors = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6'];
+
+  const fetchUserData = useCallback(async (userId: string) => {
+    if (!supabase) return;
+    const { data: subData, error } = await supabase
+      .from('subjects')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true });
+    
+    if (!error && subData) {
+      setSubjects(subData.map((s, index) => ({
+        ...s,
+        id: String(s.id),
+        topics: s.topics || [],
+        color: colors[index % colors.length]
+      })));
+    }
+  }, [colors]);
 
   useEffect(() => {
-    const checkAuth = async () => {
+    const initializeAuth = async () => {
       if (!supabase) {
         setIsLoaded(true);
         return;
       }
 
+      // 1. Checar sessão existente
       const { data: { session } } = await supabase.auth.getSession();
-      
       if (session?.user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
-
-        if (profile) {
-          const userData: User = {
-            id: profile.id,
-            name: profile.name,
-            email: session.user.email!,
-            role: profile.role,
-            status: profile.status,
-            isOnline: true,
-            weeklyGoal: profile.weekly_goal || 20
-          };
-          setUser(userData);
-          fetchUserData(userData.id);
-        }
+        const u: User = {
+          id: session.user.id,
+          name: session.user.user_metadata?.full_name || 'Usuário',
+          email: session.user.email!,
+          role: session.user.email === 'ralysonriccelli@gmail.com' ? 'admin' : 'student',
+          status: 'active',
+          isOnline: true
+        };
+        setUser(u);
+        await fetchUserData(session.user.id);
       }
       setIsLoaded(true);
-    };
 
-    checkAuth();
-
-    if (supabase) {
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-        if (session?.user) {
-          checkAuth();
-        } else {
+      // 2. Escutar mudanças (Login/Logout)
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'SIGNED_IN' && session?.user) {
+          const u: User = {
+            id: session.user.id,
+            name: session.user.user_metadata?.full_name || 'Usuário',
+            email: session.user.email!,
+            role: session.user.email === 'ralysonriccelli@gmail.com' ? 'admin' : 'student',
+            status: 'active',
+            isOnline: true
+          };
+          setUser(u);
+          await fetchUserData(session.user.id);
+        } else if (event === 'SIGNED_OUT') {
           setUser(null);
           setSubjects([]);
-          setMocks([]);
-          setStudyLogs([]);
         }
       });
+
       return () => subscription.unsubscribe();
-    }
-  }, []);
+    };
 
-  const fetchUserData = async (userId: string) => {
-    if (!supabase) return;
+    initializeAuth();
+  }, [fetchUserData]);
 
-    const { data: subData } = await supabase
-      .from('subjects')
-      .select('*, topics(*)')
-      .eq('user_id', userId);
-    
-    if (subData) setSubjects(subData);
-
-    const { data: mockData } = await supabase
-      .from('mock_exams')
-      .select('*')
-      .eq('user_id', userId);
-    
-    if (mockData) setMocks(mockData);
-
-    const { data: logData } = await supabase
-      .from('study_logs')
-      .select('*')
-      .eq('user_id', userId);
-    
-    if (logData) setStudyLogs(logData);
-
-    const { data: cycleData } = await supabase
-      .from('study_cycles')
-      .select('*')
-      .eq('user_id', userId)
-      .maybeSingle();
-    
-    if (cycleData) setCycle(cycleData);
-  };
-
-  const handleUpdateUser = async (updatedUser: User) => {
-    setUser(updatedUser);
-    if (!supabase) return;
-
-    const { error } = await supabase
-      .from('profiles')
-      .update({ 
-        name: updatedUser.name, 
-        weekly_goal: updatedUser.weeklyGoal 
-      })
-      .eq('id', updatedUser.id);
-    
-    if (error) console.error("Erro ao atualizar perfil:", error);
-  };
+  useEffect(() => {
+    const root = window.document.documentElement;
+    if (isDarkMode) root.classList.add('dark');
+    else root.classList.remove('dark');
+    localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
+  }, [isDarkMode]);
 
   const handleLogout = async () => {
     if (supabase) await supabase.auth.signOut();
     setUser(null);
+    setSubjects([]);
+    setCurrentPage('inicio');
   };
 
-  if (!isLoaded) return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
-      <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-600 border-t-transparent"></div>
-    </div>
-  );
-
-  if (!supabase) {
+  if (!isLoaded) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-6">
-        <div className="max-w-md w-full bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] shadow-2xl border border-rose-100 text-center">
-          <AlertCircle size={48} className="text-rose-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-black text-slate-900 dark:text-slate-100">Erro de Conexão</h2>
-          <p className="text-slate-500 mt-4 font-medium">O banco de dados (Supabase) não foi configurado corretamente através das variáveis de ambiente.</p>
-          <p className="text-xs text-slate-400 mt-6 uppercase font-black tracking-widest">Verifique o arquivo .env ou segredos da Vercel</p>
-        </div>
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center">
+        <Loader2 className="animate-spin text-indigo-600 mb-4" size={40} />
+        <p className="text-slate-500 font-bold uppercase text-xs tracking-widest">Iniciando Fluxo...</p>
       </div>
     );
   }
 
   if (!user) {
-    return <Login users={[]} onLogin={() => {}} onRegister={() => {}} />;
+    return (
+      <Login 
+        users={[]} 
+        onLogin={(u) => { setUser(u); fetchUserData(u.id); }} 
+        onRegister={(u) => { setUser(u); fetchUserData(u.id); }} 
+      />
+    );
   }
 
   const renderPage = () => {
-    if (user.role === 'admin') {
-      return (
-        <Admin 
-          users={allUsers} setUsers={setAllUsers}
-          editais={predefinedEditais} setEditais={setPredefinedEditais} 
-          view={currentPage.includes('dashboard') ? 'users' : 'editais'}
-        />
-      );
-    }
-
     switch (currentPage) {
-      case 'inicio': return (
-        <Dashboard 
-          subjects={subjects} mocks={mocks} cycle={cycle} 
-          studyLogs={studyLogs} weeklyGoal={user.weeklyGoal || 20}
-          onUpdateGoal={(hours) => handleUpdateUser({ ...user, weeklyGoal: hours })}
-          isDarkMode={isDarkMode}
-        />
-      );
-      case 'disciplinas': return (
-        <Disciplinas 
-          subjects={subjects} setSubjects={setSubjects} 
-          predefinedEditais={predefinedEditais}
-          onAddLog={(minutes, topicId, subjectId) => {
-            const newLog: StudySession = { id: Date.now().toString(), minutes, topicId, subjectId, date: new Date().toISOString(), type: 'estudo' };
-            setStudyLogs(prev => [...prev, newLog]);
-          }}
-        />
-      );
+      case 'inicio': return <Dashboard subjects={subjects} mocks={mocks} cycle={cycle} studyLogs={studyLogs} weeklyGoal={user.weeklyGoal || 20} onUpdateGoal={() => {}} isDarkMode={isDarkMode} />;
+      case 'disciplinas': return <Disciplinas subjects={subjects} setSubjects={setSubjects} predefinedEditais={editais} onAddLog={() => {}} />;
       case 'ciclos': return <Ciclos subjects={subjects} setCycle={setCycle} cycle={cycle} />;
-      case 'revisao': return (
-        <Revisao 
-          subjects={subjects} setSubjects={setSubjects} 
-          onAddLog={(minutes, topicId, subjectId) => {
-            const newLog: StudySession = { id: Date.now().toString(), minutes, topicId, subjectId, date: new Date().toISOString(), type: 'revisao' };
-            setStudyLogs(prev => [...prev, newLog]);
-          }}
-        />
-      );
+      case 'revisao': return <Revisao subjects={subjects} setSubjects={setSubjects} onAddLog={() => {}} />;
       case 'simulados': return <Simulados mocks={mocks} setMocks={setMocks} subjects={subjects} />;
-      default: return <Dashboard subjects={subjects} mocks={mocks} cycle={cycle} studyLogs={studyLogs} weeklyGoal={user.weeklyGoal || 20} onUpdateGoal={(hours) => handleUpdateUser({ ...user, weeklyGoal: hours })} isDarkMode={isDarkMode} />;
+      case 'admin_users': return <Admin users={allUsers} setUsers={setAllUsers} editais={editais} setEditais={setEditais} view="users" />;
+      case 'admin_editais': return <Admin users={allUsers} setUsers={setAllUsers} editais={editais} setEditais={setEditais} view="editais" />;
+      default: return <Dashboard subjects={subjects} mocks={mocks} cycle={cycle} studyLogs={studyLogs} weeklyGoal={user.weeklyGoal || 20} onUpdateGoal={() => {}} isDarkMode={isDarkMode} />;
     }
   };
 
@@ -242,77 +165,36 @@ const App: React.FC = () => {
       <aside className={`fixed inset-y-0 left-0 z-40 w-72 bg-slate-50 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transform transition-transform duration-300 md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex flex-col h-full">
           <div className="p-8 flex items-center gap-4">
-            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-lg ${user.role === 'admin' ? 'bg-rose-600' : 'bg-indigo-600'}`}>
-              {user.role === 'admin' ? <ShieldAlert size={28} /> : <Award size={28} />}
-            </div>
+            <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-lg"><Award size={28} /></div>
             <div>
-              <h1 className="text-xl font-black text-slate-900 dark:text-slate-100 leading-none">StudyFlow</h1>
-              <p className={`text-[10px] font-black uppercase tracking-widest mt-1 ${user.role === 'admin' ? 'text-rose-600' : 'text-indigo-600'}`}>
-                {user.role === 'admin' ? 'Admin' : 'Concursos'}
-              </p>
+              <h1 className="text-xl font-black text-slate-900 dark:text-slate-100">StudyFlow</h1>
+              <p className="text-[10px] font-black uppercase tracking-widest text-indigo-600">Concursos</p>
             </div>
           </div>
-
-          <nav className="flex-1 px-4 py-4 space-y-2">
-            {(user.role === 'admin' ? [
-              { id: 'admin_dashboard', label: 'Gestão de Usuários', icon: <Users size={20} /> },
-              { id: 'admin_editais', label: 'Catálogo de Editais', icon: <Database size={20} /> },
-            ] : [
-              { id: 'inicio', label: 'Início', icon: <Home size={20} /> },
-              { id: 'disciplinas', label: 'Disciplinas', icon: <BookOpen size={20} /> },
-              { id: 'ciclos', label: 'Ciclos AI', icon: <BrainCircuit size={20} /> },
-              { id: 'revisao', label: 'Revisão', icon: <RefreshCcw size={20} /> },
-              { id: 'simulados', label: 'Simulados', icon: <BarChart2 size={20} /> },
-            ]).map((item) => (
-              <button
-                key={item.id}
-                onClick={() => { setCurrentPage(item.id); setIsSidebarOpen(false); }}
-                className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-sm font-bold transition-all ${currentPage === item.id ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'}`}
-              >
+          
+          <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
+            {[
+              { id: 'inicio', label: 'Início', icon: <Home size={18} /> },
+              { id: 'disciplinas', label: 'Disciplinas', icon: <BookOpen size={18} /> },
+              { id: 'ciclos', label: 'Ciclos AI', icon: <BrainCircuit size={18} /> },
+              { id: 'revisao', label: 'Revisão', icon: <RefreshCcw size={18} /> },
+              { id: 'simulados', label: 'Simulados', icon: <BarChart2 size={18} /> },
+            ].map((item) => (
+              <button key={item.id} onClick={() => { setCurrentPage(item.id); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-bold transition-all ${currentPage === item.id ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800'}`}>
                 {item.icon} {item.label}
               </button>
             ))}
           </nav>
 
-          <div className="p-6 border-t border-slate-200 dark:border-slate-800 space-y-6">
-            <div className="bg-slate-200 dark:bg-slate-950 p-1 rounded-2xl flex items-center">
-              <button onClick={() => setIsDarkMode(false)} className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl transition-all ${!isDarkMode ? 'bg-white text-indigo-600 shadow-md font-black' : 'text-slate-500'}`}>
-                <Sun size={18} /> <span className="text-xs">Claro</span>
-              </button>
-              <button onClick={() => setIsDarkMode(true)} className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl transition-all ${isDarkMode ? 'bg-slate-800 text-indigo-400 shadow-md font-black' : 'text-slate-500'}`}>
-                <Moon size={18} /> <span className="text-xs">Escuro</span>
-              </button>
-            </div>
-            <div className="flex items-center gap-3 p-3 bg-white dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-800 relative group">
-              <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-black cursor-pointer" onClick={() => setIsProfileOpen(true)}>
-                {user.name.charAt(0)}
-              </div>
-              <div className="flex-1 truncate cursor-pointer" onClick={() => setIsProfileOpen(true)}>
-                <p className="text-sm font-bold text-slate-900 dark:text-slate-100 leading-none">{user.name}</p>
-                <p className="text-[10px] text-slate-500 mt-1">Configurações</p>
-              </div>
-              <button onClick={handleLogout} className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl">
-                <LogOut size={18} />
-              </button>
-            </div>
+          <div className="p-6 border-t border-slate-200 dark:border-slate-800">
+             <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-rose-500 font-bold text-xs p-3 hover:bg-rose-50 rounded-xl"><LogOut size={16} /> Sair</button>
           </div>
         </div>
       </aside>
 
-      <main className="flex-1 md:ml-72 overflow-y-auto bg-white dark:bg-slate-950 transition-colors">
-        <div className="max-w-6xl mx-auto p-6 md:p-12">
-          {renderPage()}
-        </div>
+      <main className="flex-1 md:ml-72 overflow-y-auto bg-white dark:bg-slate-950">
+        <div className="max-w-6xl mx-auto p-6 md:p-12">{renderPage()}</div>
       </main>
-
-      {isProfileOpen && (
-        <Profile 
-          user={user} onUpdate={handleUpdateUser} 
-          onDelete={() => {}} 
-          onClose={() => setIsProfileOpen(false)}
-          onExport={() => {}} onImport={() => {}}
-        />
-      )}
     </div>
   );
 };

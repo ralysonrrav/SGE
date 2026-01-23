@@ -15,6 +15,7 @@ let supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE
  * nós detectamos e trocamos para garantir que o app não quebre.
  */
 if (supabaseUrl.startsWith('sb_') && supabaseAnonKey.startsWith('http')) {
+  console.log("Supabase (LOG): Detectada inversão de chaves. Corrigindo automaticamente...");
   const temp = supabaseUrl;
   supabaseUrl = supabaseAnonKey;
   supabaseAnonKey = temp;
@@ -24,11 +25,18 @@ if (supabaseUrl.startsWith('sb_') && supabaseAnonKey.startsWith('http')) {
 const isValidUrl = (url: string) => url && url.startsWith('http');
 
 export const supabase = (isValidUrl(supabaseUrl) && supabaseAnonKey) 
-  ? createClient(supabaseUrl, supabaseAnonKey) 
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true,
+        flowType: 'pkce'
+      }
+    }) 
   : null;
 
 if (!supabase) {
-  console.error("ERRO CRÍTICO: Não foi possível inicializar o Supabase. Verifique as chaves de API.");
+  console.error("ERRO CRÍTICO: Não foi possível inicializar o cliente Supabase. Verifique a URL:", supabaseUrl);
 } else {
-  console.log("Supabase inicializado com sucesso.");
+  console.log("Supabase (LOG): Cliente autenticado com sucesso em", supabaseUrl);
 }
