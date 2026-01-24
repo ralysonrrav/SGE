@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
-  Home, BookOpen, RefreshCcw, BarChart2, LogOut, Menu, X,
-  BrainCircuit, Sun, Moon, Users, Settings, Loader2, User as UserIcon
+  LayoutDashboard, BookOpen, RefreshCcw, BarChart2, LogOut, Menu,
+  BrainCircuit, Users, Settings, Loader2
 } from 'lucide-react';
 import { User, Subject, MockExam, StudyCycle, StudySession, PredefinedEdital } from './types';
-import { supabase, isNetworkError } from './lib/supabase';
+import { supabase } from './lib/supabase';
 import Login from './components/Login';
 import Disciplinas from './components/Disciplinas';
 import Ciclos from './components/Ciclos';
@@ -14,6 +14,16 @@ import Simulados from './components/Simulados';
 import Dashboard from './components/Dashboard';
 import Admin from './components/Admin';
 import Profile from './components/Profile';
+
+const PAGE_BACKGROUNDS: Record<string, string> = {
+  'inicio': 'https://png.pngtree.com/background/20230519/pngtree-a-black-coffee-mug-sits-atop-stack-of-vintage-books-in-image_2661730.jpg', 
+  'disciplinas': 'https://images.unsplash.com/photo-1457369804613-52c61a468e7d?q=80&w=2070', 
+  'revisao': 'https://images.unsplash.com/photo-1495446815901-a7297e633e8d?q=80&w=2070', 
+  'ciclos': 'https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?q=80&w=2070', 
+  'simulados': 'https://images.unsplash.com/photo-1513475382585-d06e58bcb0e0?q=80&w=2070', 
+  'admin_users': 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=80&w=2070',
+  'admin_editais': 'https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=2070'
+};
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -27,21 +37,8 @@ const App: React.FC = () => {
   const [isLoaded, setIsLoaded] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [isOffline, setIsOffline] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('theme') === 'dark');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const loggingOutRef = useRef(false);
-
-  // Heartbeat: Atualiza status online
-  useEffect(() => {
-    if (!user || user.role === 'visitor' || !supabase) return;
-    const updatePresence = async () => {
-      try { await supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', user.id); } catch (e) {}
-    };
-    updatePresence();
-    const interval = setInterval(updatePresence, 120000);
-    return () => clearInterval(interval);
-  }, [user]);
 
   const fetchData = useCallback(async (userId: string, role: string) => {
     if (!supabase || loggingOutRef.current) return;
@@ -64,10 +61,7 @@ const App: React.FC = () => {
         const { data: profiles } = await supabase.from('profiles').select('*');
         if (profiles) setAllUsers(profiles.map(p => ({ ...p, name: p.name || 'Usuário', lastAccess: p.last_seen })));
       }
-      setIsOffline(false);
-    } catch (e: any) {
-      if (isNetworkError(e)) setIsOffline(true);
-    }
+    } catch (e: any) {}
   }, []);
 
   useEffect(() => {
@@ -121,66 +115,103 @@ const App: React.FC = () => {
   }, [user]);
 
   if (!isLoaded || isLoggingOut) {
-    return <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white">
-      <Loader2 className="animate-spin text-indigo-500 mb-4" size={48} />
-      <p className="font-black text-[10px] tracking-widest uppercase">Carregando Ecossistema</p>
-    </div>;
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center">
+        <Loader2 className="animate-spin text-indigo-500 mb-4" size={48} />
+        <span className="text-[9px] font-black tracking-[0.5em] uppercase text-slate-500">Syncing System</span>
+      </div>
+    );
   }
 
   if (!user) return <Login users={allUsers} onLogin={(u) => { setUser(u); fetchData(u.id, u.role); }} onRegister={(u) => { setUser(u); fetchData(u.id, u.role); }} />;
 
+  const currentBg = PAGE_BACKGROUNDS[currentPage] || PAGE_BACKGROUNDS['inicio'];
+
   return (
-    <div className={`flex h-screen overflow-hidden ${isDarkMode ? 'dark' : ''}`}>
-      <aside className={`fixed inset-y-0 left-0 z-50 w-80 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transform transition-transform duration-300 md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="flex flex-col h-full p-8">
-          <div className="mb-10">
-            <h1 className="text-2xl font-black text-indigo-600 tracking-tighter">StudyFlow</h1>
-            <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Controle de Performance</p>
+    <div className="flex h-screen overflow-hidden bg-slate-950 text-slate-200 selection:bg-indigo-500/30">
+      
+      {/* Background Layer */}
+      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
+        <div 
+          className="absolute inset-0 bg-main-overlay opacity-30"
+          style={{ backgroundImage: `url('${currentBg}')` }}
+        ></div>
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/80 to-transparent vignette"></div>
+        <div className="scanline"></div>
+      </div>
+
+      {/* Slim Sidebar */}
+      <aside className={`fixed inset-y-0 left-0 z-50 w-52 glass-panel transform transition-all duration-500 ease-in-out lg:relative lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="flex flex-col h-full">
+          <div className="p-8">
+            <div className="flex items-center gap-2 group cursor-pointer">
+              <div className="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center shadow-lg shadow-indigo-500/30 group-hover:scale-110 transition-transform">
+                <BrainCircuit className="text-white" size={18} />
+              </div>
+              <h1 className="text-lg font-black tracking-tight text-white group-hover:text-indigo-400 transition-colors">FLOW</h1>
+            </div>
           </div>
-          <nav className="flex-1 space-y-2 overflow-y-auto custom-scrollbar">
+
+          <nav className="flex-1 px-4 space-y-1 overflow-y-auto custom-scrollbar">
             {[
-              { id: 'inicio', label: 'Início', icon: <Home size={20} />, roles: ['administrator', 'student', 'visitor'] },
-              { id: 'disciplinas', label: 'Disciplinas', icon: <BookOpen size={20} />, roles: ['administrator', 'student', 'visitor'] },
-              { id: 'revisao', label: 'Revisões', icon: <RefreshCcw size={20} />, roles: ['administrator', 'student', 'visitor'] },
-              { id: 'ciclos', label: 'Ciclos', icon: <BrainCircuit size={20} />, roles: ['administrator', 'student', 'visitor'] },
-              { id: 'simulados', label: 'Simulados', icon: <BarChart2 size={20} />, roles: ['administrator', 'student', 'visitor'] },
-              { id: 'admin_users', label: 'Usuários', icon: <Users size={20} />, roles: ['administrator'] },
-              { id: 'admin_editais', label: 'Matrizes', icon: <Settings size={20} />, roles: ['administrator'] },
+              { id: 'inicio', label: 'HUB', icon: <LayoutDashboard size={16} />, roles: ['administrator', 'student', 'visitor'] },
+              { id: 'disciplinas', label: 'QUESTS', icon: <BookOpen size={16} />, roles: ['administrator', 'student', 'visitor'] },
+              { id: 'revisao', label: 'SYNC', icon: <RefreshCcw size={16} />, roles: ['administrator', 'student', 'visitor'] },
+              { id: 'ciclos', label: 'PLAN', icon: <BrainCircuit size={16} />, roles: ['administrator', 'student', 'visitor'] },
+              { id: 'simulados', label: 'LOGS', icon: <BarChart2 size={16} />, roles: ['administrator', 'student', 'visitor'] },
+              { id: 'admin_users', label: 'GOV', icon: <Users size={16} />, roles: ['administrator'] },
+              { id: 'admin_editais', label: 'CORE', icon: <Settings size={16} />, roles: ['administrator'] },
             ].filter(i => i.roles.includes(user.role)).map(item => (
-              <button key={item.id} onClick={() => { setCurrentPage(item.id); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl text-[11px] font-black uppercase transition-all ${currentPage === item.id ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 dark:shadow-none translate-x-1' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
-                {item.icon} {item.label}
+              <button 
+                key={item.id} 
+                onClick={() => { setCurrentPage(item.id); setIsSidebarOpen(false); }} 
+                className={`w-full flex items-center gap-3 px-6 py-3.5 rounded-lg text-[9px] font-black uppercase tracking-[0.2em] transition-all group ${currentPage === item.id ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-500/20' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}
+              >
+                <span className={currentPage === item.id ? 'text-white' : 'text-indigo-500 group-hover:text-indigo-400'}>{item.icon}</span>
+                {item.label}
               </button>
             ))}
           </nav>
-          <div className="pt-6 border-t dark:border-slate-800 space-y-4">
-             <div className="flex gap-2">
-                <button onClick={() => setIsDarkMode(!isDarkMode)} className="flex-1 p-3 bg-slate-50 dark:bg-slate-800 rounded-xl flex justify-center text-slate-500">{isDarkMode ? <Sun size={18}/> : <Moon size={18}/>}</button>
-                <button onClick={() => setIsProfileOpen(true)} className="flex-1 p-3 bg-slate-50 dark:bg-slate-800 rounded-xl flex justify-center text-slate-500"><UserIcon size={18}/></button>
-             </div>
-             <button onClick={handleLogout} className="w-full flex items-center justify-center gap-3 text-rose-500 font-black text-[10px] uppercase p-4 hover:bg-rose-50 rounded-xl transition-all">
-               <LogOut size={16} /> Sair
-             </button>
+
+          <div className="p-6 space-y-4 border-t border-white/5">
+            <button onClick={() => setIsProfileOpen(true)} className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition-all">
+              <div className="w-8 h-8 rounded bg-indigo-500/20 flex items-center justify-center text-indigo-400 font-black text-xs">{user.name.charAt(0)}</div>
+              <span className="text-[9px] font-black truncate text-white uppercase tracking-widest">{user.name.split(' ')[0]}</span>
+            </button>
+            <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-rose-500/60 hover:text-rose-500 font-black text-[9px] uppercase tracking-widest transition-all">
+              <LogOut size={12} /> EXIT
+            </button>
           </div>
         </div>
       </aside>
 
-      <main className="flex-1 md:ml-80 overflow-y-auto bg-slate-50 dark:bg-slate-950">
-        <div className="max-w-7xl mx-auto p-8 md:p-16">
-          {currentPage === 'inicio' && <Dashboard subjects={subjects} mocks={mocks} cycle={cycle} studyLogs={bottomStudyLogs} weeklyGoal={user.weeklyGoal || 20} onUpdateGoal={() => {}} isDarkMode={isDarkMode} />}
-          {currentPage === 'disciplinas' && <Disciplinas user={user} subjects={subjects} setSubjects={setSubjects} predefinedEditais={editais} onAddLog={addLog} />}
-          {currentPage === 'revisao' && <Revisao user={user} subjects={subjects} setSubjects={setSubjects} onAddLog={addLog} />}
-          {currentPage === 'ciclos' && <Ciclos user={user} subjects={subjects} cycle={cycle} setCycle={setCycle} />}
-          {currentPage === 'simulados' && <Simulados user={user} mocks={mocks} setMocks={setMocks} subjects={subjects} />}
-          {currentPage === 'admin_users' && <Admin user={user} users={allUsers} setUsers={setAllUsers} view="users" editais={editais} setEditais={setEditais} />}
-          {currentPage === 'admin_editais' && <Admin user={user} users={allUsers} setUsers={setAllUsers} view="editais" editais={editais} setEditais={setEditais} />}
+      {/* Main Container */}
+      <main className="flex-1 flex flex-col overflow-hidden relative z-10">
+        <header className="h-16 flex items-center justify-between px-10 border-b border-white/5 bg-slate-950/20 backdrop-blur-md">
+           <div className="flex items-center gap-4">
+              <button className="lg:hidden p-2 text-indigo-400" onClick={() => setIsSidebarOpen(true)}><Menu size={20} /></button>
+              <h2 className="text-[9px] font-black uppercase tracking-[0.5em] text-slate-500">TERMINAL / <span className="text-white">{currentPage}</span></h2>
+           </div>
+           <div className="flex items-center gap-2 px-4 py-1.5 bg-indigo-500/10 border border-indigo-500/20 rounded-full">
+             <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></div>
+             <span className="text-[8px] font-black uppercase text-emerald-400 tracking-widest">Live Sync</span>
+           </div>
+        </header>
+
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 lg:p-10">
+          <div className="max-w-[1500px] mx-auto">
+            {currentPage === 'inicio' && <Dashboard subjects={subjects} mocks={mocks} cycle={cycle} studyLogs={bottomStudyLogs} weeklyGoal={user.weeklyGoal || 20} onUpdateGoal={() => {}} isDarkMode={true} />}
+            {currentPage === 'disciplinas' && <Disciplinas user={user} subjects={subjects} setSubjects={setSubjects} predefinedEditais={editais} onAddLog={addLog} />}
+            {currentPage === 'revisao' && <Revisao user={user} subjects={subjects} setSubjects={setSubjects} onAddLog={addLog} />}
+            {currentPage === 'ciclos' && <Ciclos user={user} subjects={subjects} cycle={cycle} setCycle={setCycle} />}
+            {currentPage === 'simulados' && <Simulados user={user} mocks={mocks} setMocks={setMocks} subjects={subjects} />}
+            {currentPage === 'admin_users' && <Admin user={user} users={allUsers} setUsers={setAllUsers} view="users" editais={editais} setEditais={setEditais} />}
+            {currentPage === 'admin_editais' && <Admin user={user} users={allUsers} setUsers={setAllUsers} view="editais" editais={editais} setEditais={setEditais} />}
+          </div>
         </div>
       </main>
 
       {isProfileOpen && <Profile user={user} onUpdate={(u) => { setUser(u); }} onDelete={handleLogout} onClose={() => setIsProfileOpen(false)} onExport={()=>{}} onImport={()=>{}} />}
-      
-      <button className="md:hidden fixed bottom-8 right-8 z-[60] p-5 bg-indigo-600 text-white rounded-full shadow-2xl" onClick={() => setIsSidebarOpen(!isSidebarOpen)}>
-        {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
-      </button>
     </div>
   );
 };
