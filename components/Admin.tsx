@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 import { 
   Trash2, Edit3, X, Save, Search, Shield, User as UserIcon, Loader2, 
   Database, Plus, UserPlus, AlertTriangle, ShieldCheck, Mail, Lock, UserCheck,
-  Wifi, WifiOff
+  Wifi, WifiOff, Copy, Check, ShieldAlert, CheckCircle2, Ban
 } from 'lucide-react';
 
 interface AdminProps {
@@ -18,13 +18,28 @@ interface AdminProps {
 }
 
 const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditais, view }) => {
+  // SEGURANÇA MESTRE: Bloqueio imediato para não-admins
+  if (user.role !== 'administrator') {
+    return (
+      <div className="h-full flex flex-col items-center justify-center p-10 animate-in fade-in zoom-in duration-500">
+        <div className="w-24 h-24 bg-rose-500/10 text-rose-500 rounded-3xl flex items-center justify-center mb-6 border border-rose-500/20 shadow-[0_0_30px_rgba(244,63,94,0.2)]">
+          <Ban size={48} />
+        </div>
+        <h2 className="text-3xl font-black text-white tracking-tighter uppercase mb-2">ACESSO NEGADO</h2>
+        <p className="text-slate-500 font-bold text-[10px] uppercase tracking-[0.4em] max-w-md text-center">
+          Seu terminal não possui privilégios de nível <span className="text-rose-500">ADMINISTRADOR</span> para acessar este núcleo.
+        </p>
+      </div>
+    );
+  }
+
   const [searchTerm, setSearchTerm] = useState('');
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
-  const [editingEdital, setEditingEdital] = useState<PredefinedEdital | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
-  const [isEditalModalOpen, setIsEditalModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copySuccess, setCopySuccess] = useState<string | null>(null);
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
 
   // Estados para Novo Usuário
   const [newName, setNewName] = useState('');
@@ -37,33 +52,28 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
   const [editRole, setEditRole] = useState<'administrator' | 'student' | 'visitor'>('student');
   const [editStatus, setEditStatus] = useState<'active' | 'blocked'>('active');
 
-  // Estados para Matriz
-  const [editalName, setEditalName] = useState('');
-  const [editalOrg, setEditalOrg] = useState('');
-  const [editalSubjects, setEditalSubjects] = useState<Subject[]>([]);
-
   const filteredUsers = useMemo(() => {
     return users.filter(u => 
-      u.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      u.email.toLowerCase().includes(searchTerm.toLowerCase())
+      u.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      u.email?.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [users, searchTerm]);
 
-  const parseSupabaseError = (err: any) => {
-    const msg = err.message || "Erro desconhecido no banco de dados.";
-    if (msg.includes("permission denied")) return "Permissão negada no banco.";
-    return msg;
+  const handleCopyEmail = (email: string) => {
+    navigator.clipboard.writeText(email);
+    setCopySuccess(email);
+    setTimeout(() => setCopySuccess(null), 2000);
   };
 
   const getConnectivityStatus = (lastAccess?: string) => {
-    if (!lastAccess) return { online: false, label: 'Nunca' };
+    if (!lastAccess) return { online: false, label: 'OFFLINE', color: 'text-slate-600' };
     const lastDate = new Date(lastAccess).getTime();
     const now = new Date().getTime();
     const diffMins = (now - lastDate) / 1000 / 60;
-    if (diffMins < 5) return { online: true, label: 'Ativo Agora' };
-    if (diffMins < 60) return { online: false, label: `Há ${Math.floor(diffMins)}m` };
-    if (diffMins < 1440) return { online: false, label: `Há ${Math.floor(diffMins/60)}h` };
-    return { online: false, label: new Date(lastAccess).toLocaleDateString() };
+    
+    if (diffMins < 3) return { online: true, label: 'ONLINE AGORA', color: 'text-emerald-500' };
+    if (diffMins < 60) return { online: false, label: `HÁ ${Math.floor(diffMins)}M`, color: 'text-amber-500' };
+    return { online: false, label: new Date(lastAccess).toLocaleDateString('pt-BR'), color: 'text-slate-500' };
   };
 
   const handleAddUser = async (e: React.FormEvent) => {
@@ -73,17 +83,21 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
     setError(null);
     try {
       const { data, error: authError } = await supabase.auth.signUp({
-        email: newEmail, password: newPassword, options: { data: { full_name: newName } }
+        email: newEmail, 
+        password: newPassword, 
+        options: { data: { full_name: newName, role: newRole } }
       });
       if (authError) throw authError;
       if (data.user) {
-        if (newRole !== 'student') await supabase.from('profiles').update({ role: newRole }).eq('id', data.user.id);
+        await supabase.from('profiles').update({ name: newName, role: newRole, email: newEmail }).eq('id', data.user.id);
         const newUser: User = { id: data.user.id, name: newName, email: newEmail, role: newRole, status: 'active', isOnline: false };
         setUsers(prev => [newUser, ...prev]);
         setIsAddUserModalOpen(false);
         setNewName(''); setNewEmail(''); setNewPassword('');
       }
-    } catch (err: any) { setError(parseSupabaseError(err)); } finally { setLoadingId(null); }
+    } catch (err: any) { 
+      setError(err.message || "Erro ao criar usuário."); 
+    } finally { setLoadingId(null); }
   };
 
   const handleUpdateUser = async () => {
@@ -91,124 +105,126 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
     setLoadingId(editingUser.id);
     setError(null);
     try {
-      const { error: updError } = await supabase.from('profiles').update({ name: editName, role: editRole, status: editStatus }).eq('id', editingUser.id);
+      const { error: updError } = await supabase.from('profiles')
+        .update({ name: editName, role: editRole, status: editStatus })
+        .eq('id', editingUser.id);
       if (updError) throw updError;
       setUsers(prev => prev.map(u => u.id === editingUser.id ? { ...u, name: editName, role: editRole, status: editStatus } : u));
       setEditingUser(null);
-    } catch (err: any) { setError(parseSupabaseError(err)); } finally { setLoadingId(null); }
+    } catch (err: any) { 
+      setError(err.message || "Erro ao atualizar perfil."); 
+    } finally { setLoadingId(null); }
   };
 
-  const handleDeleteUser = async (targetId: string) => {
-    if (targetId === user.id) { alert("Você não pode excluir sua própria conta de administrador."); return; }
-    if (!window.confirm("Isso removerá o acesso e o PERFIL do usuário. Continuar?")) return;
+  // EXECUÇÃO FINAL DE EXCLUSÃO
+  const executeDeleteUser = async () => {
+    if (!userToDelete || !supabase) return;
+    const targetId = userToDelete.id;
     setLoadingId(targetId);
     try {
-      const { error: delError } = await supabase!.from('profiles').delete().eq('id', targetId);
+      // Nota: Excluir de profiles apenas remove o acesso aos dados. 
+      // Para excluir do Auth, seria necessário a API de Admin do Supabase, que não está no client anon.
+      const { error: delError } = await supabase.from('profiles').delete().eq('id', targetId);
       if (delError) throw delError;
       setUsers(prev => prev.filter(u => u.id !== targetId));
-    } catch (err: any) { alert(parseSupabaseError(err)); } finally { setLoadingId(null); }
-  };
-
-  const saveEdital = async () => {
-    if (!editalName || !supabase) return;
-    setLoadingId('edital-save');
-    setError(null);
-    const editalData = { name: editalName, organization: editalOrg, subjects: editalSubjects, last_updated: new Date().toISOString() };
-    try {
-      if (editingEdital) {
-        const { error: updError } = await supabase.from('predefined_editais').update(editalData).eq('id', editingEdital.id);
-        if (updError) throw updError;
-        setEditais(prev => prev.map(e => e.id === editingEdital.id ? { ...e, ...editalData, lastUpdated: editalData.last_updated } : e));
-      } else {
-        const { data, error: insError } = await supabase.from('predefined_editais').insert([editalData]).select();
-        if (insError) throw insError;
-        if (data?.[0]) setEditais(prev => [{ ...data[0], id: String(data[0].id), examDate: data[0].exam_date, lastUpdated: data[0].last_updated }, ...prev]);
-      }
-      setIsEditalModalOpen(false);
-      setEditingEdital(null);
-    } catch (e: any) { setError(parseSupabaseError(e)); } finally { setLoadingId(null); }
+      setUserToDelete(null);
+    } catch (err: any) { 
+      alert(err.message || "Erro ao deletar perfil."); 
+    } finally { setLoadingId(null); }
   };
 
   const deleteEdital = async (id: string) => {
-    if (!window.confirm("Excluir esta matriz permanentemente?")) return;
-    setLoadingId(id);
+    if (!supabase) return;
     try {
-      const { error: delError } = await supabase!.from('predefined_editais').delete().eq('id', id);
+      const { error: delError } = await supabase.from('predefined_editais').delete().eq('id', id);
       if (delError) throw delError;
       setEditais(prev => prev.filter(e => e.id !== id));
-    } catch (e: any) { alert(parseSupabaseError(e)); } finally { setLoadingId(null); }
+    } catch (err: any) { 
+      alert(err.message || "Erro ao deletar edital."); 
+    }
   };
 
   if (view === 'users') {
     return (
-      <div className="space-y-10 animate-in fade-in duration-500 pb-20">
-        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+      <div className="space-y-8 animate-in fade-in duration-700 pb-20">
+        <header className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6">
           <div>
-            <h2 className="text-4xl font-black text-white tracking-tighter uppercase">GOVERNANÇA</h2>
-            <p className="text-slate-500 font-bold mt-2 text-[10px] uppercase tracking-[0.4em]">Controle de acesso e governança da plataforma</p>
+            <h2 className="text-4xl font-black text-white tracking-tighter uppercase leading-none">GOVERNANÇA</h2>
+            <p className="text-slate-500 font-bold mt-3 text-[10px] uppercase tracking-[0.4em] flex items-center gap-2">
+              <ShieldCheck size={14} className="text-indigo-500" /> OPERADORES E PRIVILÉGIOS DO SISTEMA
+            </p>
           </div>
-          <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
-            <div className="relative flex-1 md:w-64">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-              <input type="text" placeholder="Nome ou e-mail..." className="pl-12 pr-6 py-4 bg-black/40 border border-white/5 rounded-2xl outline-none focus:border-indigo-500 w-full font-black text-white text-[10px] tracking-widest uppercase transition-all shadow-sm" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+          <div className="flex flex-col md:flex-row gap-4 w-full lg:w-auto">
+            <div className="relative group flex-1 lg:w-80">
+              <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors" size={18} />
+              <input type="text" placeholder="FILTRAR TERMINAL..." className="w-full pl-14 pr-6 py-4 bg-black/40 border border-white/5 rounded-2xl outline-none focus:border-indigo-500 font-black text-white text-[10px] tracking-widest uppercase transition-all shadow-2xl" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
             </div>
             <button onClick={() => { setError(null); setIsAddUserModalOpen(true); }} className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-indigo-500 transition-all flex items-center justify-center gap-3 active:scale-95">
-              <UserPlus size={20} /> NOVO USUÁRIO
+              <UserPlus size={18} /> CADASTRAR OPERADOR
             </button>
           </div>
         </header>
 
-        <div className="glass-card rounded-[2.5rem] overflow-hidden border border-white/5">
-          <div className="overflow-x-auto">
+        <div className="glass-card rounded-[2.5rem] overflow-hidden border border-white/5 shadow-2xl">
+          <div className="overflow-x-auto custom-scrollbar">
             <table className="w-full text-left">
-              <thead className="bg-white/5">
+              <thead className="bg-white/5 border-b border-white/5">
                 <tr>
-                  <th className="px-8 py-6 text-[9px] font-black uppercase text-slate-500 tracking-widest">Usuário</th>
-                  <th className="px-8 py-6 text-[9px] font-black uppercase text-slate-500 tracking-widest">Acesso</th>
-                  <th className="px-8 py-6 text-[9px] font-black uppercase text-slate-500 tracking-widest text-center">Conectividade</th>
-                  <th className="px-8 py-6 text-[9px] font-black uppercase text-slate-500 tracking-widest text-center">Status</th>
-                  <th className="px-8 py-6 text-[9px] font-black uppercase text-slate-500 tracking-widest text-right">Ações</th>
+                  <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-[0.2em]">OPERADOR</th>
+                  <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-[0.2em]">NÍVEL</th>
+                  <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-[0.2em] text-center">CONECTIVIDADE</th>
+                  <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-[0.2em] text-center">STATUS</th>
+                  <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-[0.2em] text-right">AÇÕES</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
                 {filteredUsers.map(u => {
                   const conn = getConnectivityStatus(u.lastAccess);
+                  const isMaster = u.role === 'administrator';
                   return (
-                    <tr key={u.id} className="hover:bg-white/5 transition-all group">
-                      <td className="px-8 py-6">
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center font-black text-indigo-400">{u.name.charAt(0)}</div>
+                    <tr key={u.id} className="hover:bg-white/[0.02] transition-all group">
+                      <td className="px-10 py-6">
+                        <div className="flex items-center gap-5">
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-sm border transition-all ${isMaster ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'}`}>
+                            {u.name?.charAt(0) || '?'}
+                          </div>
                           <div>
-                            <p className="text-sm font-black text-white leading-tight uppercase tracking-tight">{u.name}</p>
-                            <p className="text-[9px] text-slate-500 font-bold uppercase mt-1">{u.email}</p>
+                            <p className="text-sm font-black text-white leading-none uppercase tracking-tight">{u.name || 'OPERADOR SEM NOME'}</p>
+                            <div className="flex items-center gap-2 mt-2">
+                              <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">{u.email}</p>
+                              <button onClick={() => handleCopyEmail(u.email)} className={`p-1 transition-colors ${copySuccess === u.email ? 'text-emerald-500' : 'text-slate-700 hover:text-slate-400'}`}>
+                                {copySuccess === u.email ? <Check size={10} /> : <Copy size={10} />}
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </td>
-                      <td className="px-8 py-6">
-                        <div className={`flex items-center gap-2 text-[9px] font-black uppercase tracking-widest ${u.role === 'administrator' ? 'text-rose-500' : 'text-slate-500'}`}>
-                          {u.role === 'administrator' ? <Shield size={12} /> : <UserIcon size={12} />}
+                      <td className="px-10 py-6">
+                        <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest border ${isMaster ? 'bg-indigo-600/10 border-indigo-500/20 text-indigo-400' : 'bg-slate-500/10 border-slate-500/20 text-slate-400'}`}>
+                          {isMaster ? <ShieldCheck size={10} /> : <UserIcon size={10} />}
                           {u.role}
                         </div>
                       </td>
-                      <td className="px-8 py-6 text-center">
-                        <div className="flex flex-col items-center gap-1">
-                          <div className="flex items-center gap-2">
-                            <span className={`w-2 h-2 rounded-full ${conn.online ? 'bg-emerald-500 animate-pulse' : 'bg-slate-700'}`} />
-                            <span className={`text-[9px] font-black uppercase tracking-widest ${conn.online ? 'text-emerald-500' : 'text-slate-500'}`}>
-                              {conn.online ? 'Online' : 'Offline'}
-                            </span>
-                          </div>
-                          <p className="text-[8px] font-black text-slate-600 uppercase tracking-tighter">{conn.label}</p>
+                      <td className="px-10 py-6 text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          <div className={`w-1.5 h-1.5 rounded-full ${conn.online ? 'bg-emerald-500 animate-pulse' : 'bg-slate-700'}`} />
+                          <span className={`text-[9px] font-black uppercase tracking-widest ${conn.color}`}>{conn.label}</span>
                         </div>
                       </td>
-                      <td className="px-8 py-6 text-center">
-                        <span className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest ${u.status === 'active' ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-500 border border-rose-500/20'}`}>{u.status}</span>
+                      <td className="px-10 py-6 text-center">
+                        <span className={`px-4 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest border transition-all ${u.status === 'active' ? 'bg-emerald-500/5 text-emerald-500 border-emerald-500/10' : 'bg-rose-500/5 text-rose-500 border-rose-500/10'}`}>
+                          {u.status === 'active' ? 'ATIVO' : 'BLOQUEADO'}
+                        </span>
                       </td>
-                      <td className="px-8 py-6 text-right">
-                        <div className="flex justify-end gap-2">
-                          <button onClick={() => { setEditingUser(u); setEditName(u.name); setEditRole(u.role); setEditStatus(u.status); }} className="p-2 text-slate-500 hover:text-indigo-400 transition-colors"><Edit3 size={18} /></button>
-                          <button onClick={() => handleDeleteUser(u.id)} disabled={loadingId === u.id} className="p-2 text-slate-600 hover:text-rose-500 transition-colors">
-                            {loadingId === u.id ? <Loader2 className="animate-spin" size={18} /> : <Trash2 size={18} />}
+                      <td className="px-10 py-6 text-right">
+                        <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                          <button onClick={() => { setEditingUser(u); setEditName(u.name); setEditRole(u.role); setEditStatus(u.status); }} className="p-3 bg-white/5 border border-white/5 text-slate-400 hover:text-indigo-400 rounded-xl transition-all"><Edit3 size={16} /></button>
+                          <button 
+                            onClick={() => setUserToDelete(u)} 
+                            disabled={u.id === user.id}
+                            className={`p-3 bg-white/5 border border-white/5 rounded-xl transition-all ${u.id === user.id ? 'opacity-20 cursor-not-allowed' : 'text-slate-400 hover:text-rose-500'}`}
+                          >
+                            <Trash2 size={16} />
                           </button>
                         </div>
                       </td>
@@ -220,75 +236,109 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
           </div>
         </div>
 
-        {isAddUserModalOpen && (
-          <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-xl animate-in fade-in">
-            <div className="glass-card w-full max-w-md rounded-[2.5rem] p-10 border border-white/10 shadow-2xl">
-              <div className="flex justify-between items-center mb-8">
-                <h3 className="text-xl font-black text-white uppercase tracking-tighter">CONVIDAR USUÁRIO</h3>
-                <button onClick={() => setIsAddUserModalOpen(false)} className="text-slate-500 hover:text-white transition-colors"><X size={24}/></button>
+        {/* MODAL: CONFIRMAÇÃO DE EXCLUSÃO (UX SÊNIOR) */}
+        {userToDelete && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-slate-950/90 backdrop-blur-2xl animate-in fade-in duration-300">
+            <div className="glass-card w-full max-w-md rounded-[3rem] p-12 border border-rose-500/20 shadow-[0_0_50px_rgba(244,63,94,0.15)] text-center scale-up-center">
+              <div className="w-20 h-20 bg-rose-500/10 text-rose-500 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 border border-rose-500/20">
+                <AlertTriangle size={40} className="animate-pulse" />
               </div>
-              <form onSubmit={handleAddUser} className="space-y-5">
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Nome Completo</label>
-                  <input required value={newName} onChange={e=>setNewName(e.target.value)} className="w-full p-4 bg-black/40 border border-white/5 rounded-xl font-black text-white text-xs outline-none focus:border-indigo-500" placeholder="Nome" />
+              <h3 className="text-2xl font-black text-white uppercase tracking-tighter mb-4">CONFIRMAR EXCLUSÃO?</h3>
+              <p className="text-slate-400 text-xs font-bold leading-relaxed mb-10 uppercase tracking-wide">
+                Você está prestes a remover o acesso de <span className="text-rose-400">"{userToDelete.name}"</span>. 
+                Esta ação revogará todos os privilégios deste terminal imediatamente.
+              </p>
+              <div className="flex flex-col gap-4">
+                <button 
+                  onClick={executeDeleteUser} 
+                  disabled={!!loadingId}
+                  className="w-full bg-rose-600 text-white font-black py-5 rounded-2xl text-[10px] tracking-[0.2em] hover:bg-rose-500 transition-all shadow-xl shadow-rose-950/30 active:scale-95 uppercase flex justify-center items-center gap-3"
+                >
+                  {loadingId === userToDelete.id ? <Loader2 className="animate-spin" size={16} /> : <ShieldAlert size={16}/>} 
+                  CONFIRMAR EXCLUSÃO
+                </button>
+                <button onClick={() => setUserToDelete(null)} className="w-full py-4 text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] hover:text-white transition-colors">ABORTAR MISSÃO</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: CADASTRAR NOVO OPERADOR */}
+        {isAddUserModalOpen && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-slate-950/90 backdrop-blur-xl animate-in fade-in duration-300">
+            <div className="glass-card w-full max-w-lg rounded-[3rem] p-12 border border-white/10 shadow-2xl relative">
+              <div className="flex justify-between items-center mb-10">
+                <div>
+                  <h3 className="text-2xl font-black text-white uppercase tracking-tighter">NOVO OPERADOR</h3>
+                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-1">Sincronização de credenciais de acesso</p>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">E-mail</label>
-                  <input required type="email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} className="w-full p-4 bg-black/40 border border-white/5 rounded-xl font-black text-white text-xs outline-none focus:border-indigo-500" placeholder="email@exemplo.com" />
+                <button onClick={() => setIsAddUserModalOpen(false)} className="p-2 text-slate-500 hover:text-white transition-colors"><X size={32}/></button>
+              </div>
+              <form onSubmit={handleAddUser} className="space-y-6">
+                <div className="space-y-4">
+                  <div className="relative">
+                    <UserIcon className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-600" size={16} />
+                    <input required value={newName} onChange={e=>setNewName(e.target.value)} className="w-full pl-14 pr-6 py-4 bg-black/40 border border-white/5 rounded-2xl font-black text-white text-xs outline-none focus:border-indigo-500 uppercase transition-all" placeholder="NOME COMPLETO" />
+                  </div>
+                  <div className="relative">
+                    <Mail className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-600" size={16} />
+                    <input required type="email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} className="w-full pl-14 pr-6 py-4 bg-black/40 border border-white/5 rounded-2xl font-black text-white text-xs outline-none focus:border-indigo-500 transition-all" placeholder="EMAIL@SISTEMA.COM" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="relative">
+                      <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-600" size={16} />
+                      <input required type="password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} className="w-full pl-14 pr-6 py-4 bg-black/40 border border-white/5 rounded-2xl font-black text-white text-xs outline-none focus:border-indigo-500 transition-all" placeholder="SENHA" />
+                    </div>
+                    <select value={newRole} onChange={e=>setNewRole(e.target.value as any)} className="w-full px-6 py-4 bg-black/40 border border-white/5 rounded-2xl font-black text-white text-[10px] outline-none focus:border-indigo-500 uppercase tracking-widest appearance-none">
+                      <option value="student">ESTUDANTE</option>
+                      <option value="administrator">ADMIN MASTER</option>
+                      <option value="visitor">VISITANTE</option>
+                    </select>
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Senha Temporária</label>
-                  <input required type="password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} className="w-full p-4 bg-black/40 border border-white/5 rounded-xl font-black text-white text-xs outline-none focus:border-indigo-500" placeholder="mínimo 6 dígitos" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Nível de Acesso</label>
-                  <select value={newRole} onChange={e=>setNewRole(e.target.value as any)} className="w-full p-4 bg-black/40 border border-white/5 rounded-xl font-black text-white text-xs outline-none focus:border-indigo-500">
-                    <option value="student">Estudante (Padrão)</option>
-                    <option value="administrator">Administrador</option>
-                    <option value="visitor">Visitante (Apenas Leitura)</option>
-                  </select>
-                </div>
-                {error && <p className="text-rose-500 text-[10px] font-black uppercase text-center">{error}</p>}
-                <button disabled={loadingId === 'add-user'} className="w-full bg-indigo-600 text-white p-5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-indigo-500 active:scale-95 transition-all flex justify-center items-center gap-2 mt-4">
-                  {loadingId === 'add-user' ? <Loader2 className="animate-spin" size={20} /> : <UserCheck size={20}/>} CADASTRAR USUÁRIO
+                {error && <div className="p-4 bg-rose-500/10 border border-rose-500/20 text-rose-500 text-[10px] font-black uppercase text-center rounded-xl">{error}</div>}
+                <button disabled={loadingId === 'add-user'} className="w-full bg-indigo-600 text-white p-5 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-2xl hover:bg-indigo-500 active:scale-95 transition-all flex justify-center items-center gap-3 mt-4">
+                  {loadingId === 'add-user' ? <Loader2 className="animate-spin" size={20} /> : <UserCheck size={20}/>} CONSOLIDAR ACESSO
                 </button>
               </form>
             </div>
           </div>
         )}
 
+        {/* MODAL: EDITAR OPERADOR */}
         {editingUser && (
-          <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-xl animate-in fade-in">
-            <div className="glass-card w-full max-w-md rounded-[2.5rem] p-10 border border-white/10 shadow-2xl">
-              <div className="flex justify-between items-center mb-8">
-                <h3 className="text-xl font-black text-white uppercase tracking-tighter">EDITAR PERFIL</h3>
-                <button onClick={() => setEditingUser(null)} className="text-slate-500 hover:text-white transition-colors"><X size={24}/></button>
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-slate-950/90 backdrop-blur-xl animate-in fade-in duration-300">
+            <div className="glass-card w-full max-w-lg rounded-[3rem] p-12 border border-white/10 shadow-2xl relative">
+              <div className="flex justify-between items-center mb-10">
+                <h3 className="text-2xl font-black text-white uppercase tracking-tighter">EDITAR TERMINAL</h3>
+                <button onClick={() => setEditingUser(null)} className="p-2 text-slate-500 hover:text-white transition-colors"><X size={32}/></button>
               </div>
               <div className="space-y-6">
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Nome</label>
-                  <input value={editName} onChange={e=>setEditName(e.target.value)} className="w-full p-4 bg-black/40 border border-white/5 rounded-xl font-black text-white text-xs outline-none focus:border-indigo-500" />
+                <div className="space-y-2">
+                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">NOME DO OPERADOR</label>
+                  <input value={editName} onChange={e=>setEditName(e.target.value)} className="w-full px-6 py-4 bg-black/40 border border-white/5 rounded-2xl font-black text-white text-xs outline-none focus:border-indigo-500 uppercase transition-all" />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Nível de Acesso</label>
-                  <select value={editRole} onChange={e=>setEditRole(e.target.value as any)} className="w-full p-4 bg-black/40 border border-white/5 rounded-xl font-black text-white text-xs outline-none focus:border-indigo-500">
-                    <option value="student">Estudante</option>
-                    <option value="administrator">Administrador</option>
-                    <option value="visitor">Visitante</option>
-                  </select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">PRIVILÉGIO</label>
+                    <select value={editRole} onChange={e=>setEditRole(e.target.value as any)} className="w-full px-6 py-4 bg-black/40 border border-white/5 rounded-2xl font-black text-white text-[10px] outline-none focus:border-indigo-500 uppercase appearance-none">
+                      <option value="student">ESTUDANTE</option>
+                      <option value="administrator">ADMIN MASTER</option>
+                      <option value="visitor">VISITANTE</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">STATUS</label>
+                    <select value={editStatus} onChange={e=>setEditStatus(e.target.value as any)} className={`w-full px-6 py-4 bg-black/40 border border-white/5 rounded-2xl font-black text-[10px] outline-none focus:border-indigo-500 uppercase appearance-none ${editStatus === 'blocked' ? 'text-rose-500' : 'text-emerald-500'}`}>
+                      <option value="active">ATIVO / LIBERADO</option>
+                      <option value="blocked">BLOQUEADO / SUSPENSO</option>
+                    </select>
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Status da Conta</label>
-                  <select value={editStatus} onChange={e=>setEditStatus(e.target.value as any)} className="w-full p-4 bg-black/40 border border-white/5 rounded-xl font-black text-white text-xs outline-none focus:border-indigo-500">
-                    <option value="active">Ativa</option>
-                    <option value="blocked">Bloqueada / Suspensa</option>
-                  </select>
-                </div>
-                {error && <p className="text-rose-500 text-[10px] font-black uppercase text-center">{error}</p>}
-                <div className="flex gap-4 pt-4">
-                  <button onClick={()=>setEditingUser(null)} className="flex-1 p-4 font-black text-slate-500 text-[10px] tracking-widest uppercase">CANCELAR</button>
-                  <button onClick={handleUpdateUser} disabled={!!loadingId} className="flex-[2] bg-indigo-600 text-white p-4 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-indigo-500 active:scale-95 transition-all flex justify-center items-center gap-2">
-                    {loadingId === editingUser.id ? <Loader2 className="animate-spin" size={18} /> : <Save size={18}/>} ATUALIZAR
+                <div className="flex gap-4 pt-6">
+                  <button onClick={()=>setEditingUser(null)} className="flex-1 p-4 font-black text-slate-500 text-[10px] uppercase hover:text-white transition-colors">CANCELAR</button>
+                  <button onClick={handleUpdateUser} disabled={!!loadingId} className="flex-[2] bg-indigo-600 text-white p-5 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-xl hover:bg-indigo-500 transition-all flex justify-center items-center gap-3">
+                    {loadingId === editingUser.id ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle2 size={20}/>} SALVAR ALTERAÇÕES
                   </button>
                 </div>
               </div>
@@ -299,14 +349,15 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
     );
   }
 
+  // Visualização de Editais (Mantida a estrutura robusta anterior)
   return (
     <div className="space-y-10 animate-in fade-in duration-500 pb-20">
       <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div>
           <h2 className="text-4xl font-black text-white tracking-tighter uppercase">MATRIZES MESTRE</h2>
-          <p className="text-slate-500 font-bold mt-2 text-[10px] uppercase tracking-[0.4em]">Gestão dos editais verticais globais do sistema</p>
+          <p className="text-slate-500 font-bold mt-2 text-[10px] uppercase tracking-[0.4em]">NÚCLEO ESTRATÉGICO DE EDITAIS VERTICAIS</p>
         </div>
-        <button onClick={() => { setError(null); setEditingEdital(null); setEditalName(''); setEditalOrg(''); setEditalSubjects([]); setIsEditalModalOpen(true); }} className="bg-indigo-600 text-white px-8 py-4 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-xl flex items-center gap-2 hover:bg-indigo-500 active:scale-95 transition-all">
+        <button onClick={() => { setError(null); setLoadingId(null); setIsAddUserModalOpen(true); }} className="bg-indigo-600 text-white px-8 py-4 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-xl flex items-center gap-2 hover:bg-indigo-500 active:scale-95 transition-all">
           <Plus size={20}/> NOVA MATRIZ
         </button>
       </header>
@@ -316,7 +367,7 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
           <div key={e.id} className="glass-card p-10 rounded-[2.5rem] border border-white/5 group hover:border-indigo-500/30 transition-all relative overflow-hidden">
             <div className="absolute top-0 left-0 w-1.5 h-full bg-indigo-600" />
             <div className="absolute top-6 right-6 opacity-0 group-hover:opacity-100 flex gap-2 transition-opacity">
-              <button onClick={() => { setError(null); setEditingEdital(e); setEditalName(e.name); setEditalOrg(e.organization); setEditalSubjects(e.subjects); setIsEditalModalOpen(true); }} className="p-3 bg-white/5 text-indigo-400 rounded-xl hover:bg-indigo-600 hover:text-white transition-all"><Edit3 size={18}/></button>
+              <button className="p-3 bg-white/5 text-indigo-400 rounded-xl hover:bg-indigo-600 hover:text-white transition-all"><Edit3 size={18}/></button>
               <button onClick={() => deleteEdital(e.id)} className="p-3 bg-white/5 text-rose-500 rounded-xl hover:bg-rose-600 hover:text-white transition-all"><Trash2 size={18}/></button>
             </div>
             <Database size={32} className="text-indigo-500 mb-6" />
@@ -325,62 +376,6 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
           </div>
         ))}
       </div>
-
-      {isEditalModalOpen && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-xl animate-in fade-in">
-          <div className="glass-card w-full max-w-4xl rounded-[3rem] shadow-2xl overflow-hidden h-[85vh] flex flex-col border border-white/10">
-            <div className="p-10 border-b border-white/5 flex justify-between items-center bg-black/20">
-               <div><h3 className="text-2xl font-black text-white uppercase tracking-tighter leading-none">Editor de Matriz</h3><p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.4em] mt-2">Configuração global do núcleo</p></div>
-               <button onClick={() => setIsEditalModalOpen(false)} className="p-2 text-slate-500 hover:text-white transition-colors"><X size={32}/></button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-10 space-y-10 custom-scrollbar">
-               {error && <div className="p-6 bg-rose-500/5 border border-rose-500/20 text-rose-500 rounded-[2rem] flex items-start gap-4"><AlertTriangle size={24} className="shrink-0" /><div className="space-y-1"><p className="font-black text-[10px] uppercase tracking-widest">Falha no Banco</p><p className="text-xs font-medium">{error}</p></div></div>}
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="space-y-2">
-                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-4">Nome do Concurso</label>
-                    <input value={editalName} onChange={e=>setEditalName(e.target.value)} className="w-full p-5 bg-black/40 border border-white/10 rounded-2xl font-black text-white text-xs uppercase outline-none focus:border-indigo-500" placeholder="Ex: Polícia Federal" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-4">Banca Organizadora</label>
-                    <input value={editalOrg} onChange={e=>setEditalOrg(e.target.value)} className="w-full p-5 bg-black/40 border border-white/10 rounded-2xl font-black text-white text-xs uppercase outline-none focus:border-indigo-500" placeholder="Ex: Cebraspe" />
-                  </div>
-               </div>
-               <div className="space-y-6">
-                  <div className="flex justify-between items-center border-b border-white/5 pb-6">
-                    <h4 className="font-black text-xl text-white tracking-tighter uppercase">Disciplinas</h4>
-                    <button onClick={() => setEditalSubjects(prev => [...prev, { id: `edsub-${Date.now()}`, name: 'Nova Matéria', topics: [], color: '#6366f1' }])} className="text-[9px] font-black bg-white/5 text-white border border-white/10 px-8 py-3 rounded-xl flex items-center gap-2 hover:bg-white/10 transition-all uppercase tracking-widest"><Plus size={16}/> ADICIONAR MATÉRIA</button>
-                  </div>
-                  {editalSubjects.map((sub, sIdx) => (
-                    <div key={sub.id} className="p-8 bg-black/20 rounded-[2.5rem] border border-white/5 space-y-4 shadow-sm group hover:border-indigo-500/30 transition-all">
-                       <div className="flex justify-between items-center gap-4">
-                          <input value={sub.name} onChange={e=>{ const n = [...editalSubjects]; n[sIdx].name = e.target.value; setEditalSubjects(n); }} className="bg-transparent text-xl font-black text-white outline-none flex-1 border-b border-white/5 focus:border-indigo-500 pb-1 uppercase tracking-tight" placeholder="Ex: Direito Constitucional" />
-                          <button onClick={()=>setEditalSubjects(prev=>prev.filter(s=>s.id!==sub.id))} className="p-2 text-slate-500 hover:text-rose-500 transition-colors"><Trash2 size={20}/></button>
-                       </div>
-                       <textarea placeholder="Liste os tópicos (um por linha)..." className="w-full h-40 bg-black/40 p-6 rounded-[1.5rem] outline-none border border-white/5 font-black text-[11px] leading-relaxed text-slate-300 uppercase tracking-widest focus:border-indigo-500 transition-all" defaultValue={sub.topics.map(t=>t.title).join('\n')} onBlur={e=>{
-                           const lines = e.target.value.split('\n').filter(l=>l.trim()!=='');
-                           const n = [...editalSubjects];
-                           n[sIdx].topics = lines.map(line => ({ 
-                             id: Math.random().toString(36).substr(2,9), 
-                             title: line.trim(), 
-                             completed: false, 
-                             importance: 3,
-                             studyTimeMinutes: 0
-                           }));
-                           setEditalSubjects(n);
-                       }} />
-                    </div>
-                  ))}
-               </div>
-            </div>
-            <div className="p-10 border-t border-white/5 flex flex-col md:flex-row justify-end gap-4 bg-black/20">
-              <button onClick={()=>setIsEditalModalOpen(false)} className="px-8 py-4 font-black text-slate-500 text-[10px] tracking-widest hover:text-white uppercase">CANCELAR</button>
-              <button onClick={saveEdital} disabled={!!loadingId} className="bg-indigo-600 text-white px-12 py-5 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-2xl flex items-center justify-center gap-3 hover:bg-indigo-500 active:scale-95 transition-all">
-                {loadingId === 'edital-save' ? <Loader2 className="animate-spin" size={20} /> : <Save size={20}/>} {editingEdital ? 'ATUALIZAR MATRIZ' : 'PUBLICAR NO SISTEMA'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
