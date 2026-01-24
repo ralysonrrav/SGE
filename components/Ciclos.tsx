@@ -66,7 +66,7 @@ const Ciclos: React.FC<CiclosProps> = ({ user, subjects, cycle, setCycle }) => {
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       <header>
-        <h2 className="text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight">Mentoria IA</h2>
+        <h2 className="text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight">Ciclos</h2>
         <p className="text-slate-500 dark:text-slate-400 font-medium">Cronograma inteligente baseado no custo-benefício de cada matéria.</p>
       </header>
 

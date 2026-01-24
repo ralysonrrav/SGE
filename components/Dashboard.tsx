@@ -53,7 +53,7 @@ const Dashboard: React.FC<DashboardProps> = ({ subjects, mocks, cycle, studyLogs
     <div className="space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-1000 pb-24">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-8">
         <div>
-          <h2 className="text-5xl font-black text-slate-900 dark:text-slate-100 tracking-tighter leading-none">Visão Analítica</h2>
+          <h2 className="text-5xl font-black text-slate-900 dark:text-slate-100 tracking-tighter leading-none">Início</h2>
           <p className="text-slate-500 dark:text-slate-400 font-black text-[10px] mt-4 flex items-center gap-2 uppercase tracking-[0.3em]">
             <Calendar size={12} className="text-indigo-500" /> STATUS DE HOJE: {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
           </p>

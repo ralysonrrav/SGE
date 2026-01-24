@@ -164,7 +164,7 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
     <div className="space-y-10 animate-in fade-in duration-700 pb-24">
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
-          <h2 className="text-4xl font-black text-slate-900 dark:text-slate-100 tracking-tighter">Edital Vertical</h2>
+          <h2 className="text-4xl font-black text-slate-900 dark:text-slate-100 tracking-tighter">Disciplinas</h2>
           <p className="text-slate-500 dark:text-slate-400 font-bold mt-2 text-xs uppercase tracking-[0.2em]">Sincronização Profissional de Tópicos</p>
         </div>
         <div className="flex gap-3">
@@ -192,7 +192,7 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
       </header>
 
       {showCatalog && (
-        <div className="bg-indigo-50 dark:bg-indigo-950/20 p-10 rounded-[2.5rem] border border-indigo-100 dark:border-indigo-900/30 animate-in slide-in-from-top-6 duration-500">
+        <div className="bg-indigo-50 dark:bg-indigo-950/20 p-10 rounded-[2.5rem] border border-indigo-100 dark:indigo-900/30 animate-in slide-in-from-top-6 duration-500">
           <div className="flex items-center justify-between mb-8">
             <h3 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tighter">Editais Disponíveis</h3>
             <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">Modelos do Catálogo Mestre</p>
