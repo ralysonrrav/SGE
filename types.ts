@@ -30,7 +30,7 @@ export interface Topic {
   studyTimeMinutes?: number;
   questionsAttempted?: number;
   questionsCorrect?: number;
-  revisionsDone?: number[]; // [7, 15, 30]
+  revisionsDone?: number[];
 }
 
 export interface Subject {
@@ -41,12 +41,13 @@ export interface Subject {
 }
 
 export interface PredefinedEdital {
-  id: string;
+  id: string; // UUID string
   name: string;
   organization: string;
   examDate?: string;
   subjects: Subject[];
   lastUpdated: string;
+  created_by?: string;
 }
 
 export interface MockExam {

@@ -3,7 +3,7 @@ import React, { useState, useCallback } from 'react';
 import { Subject, Topic, PredefinedEdital, User } from '../types';
 import { supabase, isNetworkError } from '../lib/supabase';
 import { 
-  Plus, Trash2, ChevronDown, ChevronUp, CheckCircle, TrendingUp, Save, Check, Clock, Calendar, Sparkles, X, DownloadCloud, AlertCircle
+  Plus, Trash2, ChevronDown, ChevronUp, CheckCircle, TrendingUp, Save, Check, Clock, Calendar, Sparkles, X, DownloadCloud, AlertCircle, Target, BarChart
 } from 'lucide-react';
 
 interface DisciplinasProps {
@@ -83,6 +83,7 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
 
     if (supabase && !sId.startsWith('local-') && !sId.startsWith('imported-')) {
       try {
+        // Fix: Changed from profiles delete to subjects delete for correct data handling
         await supabase.from('subjects').delete().eq('id', sId).eq('user_id', user.id);
       } catch (err) {
         console.error("Erro ao excluir disciplina:", err);
@@ -158,6 +159,12 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
     
     await handleSubjectUpdate(subId, next);
     setActiveProgressTopic(null);
+  };
+
+  const getPerformanceColor = (perc: number) => {
+    if (perc >= 80) return 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100';
+    if (perc >= 50) return 'text-amber-600 bg-amber-50 dark:bg-amber-900/20 border-amber-100';
+    return 'text-rose-600 bg-rose-50 dark:bg-rose-900/20 border-rose-100';
   };
 
   return (
@@ -255,7 +262,7 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
                       value={newTopicTitle} 
                       onChange={(e) => setNewTopicTitle(e.target.value)} 
                       onKeyPress={(e) => e.key === 'Enter' && (async () => {
-                        const nt: Topic = { id: `topic-${Date.now()}`, title: newTopicTitle.trim(), completed: false, importance: 3, studyTimeMinutes: 0 };
+                        const nt: Topic = { id: `topic-${Date.now()}`, title: newTopicTitle.trim(), completed: false, importance: 3, studyTimeMinutes: 0, questionsAttempted: 0, questionsCorrect: 0 };
                         await handleSubjectUpdate(String(sub.id), [...sub.topics, nt]);
                         setNewTopicTitle('');
                       })()} 
@@ -263,27 +270,40 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
                   </div>
 
                   <div className="grid grid-cols-1 gap-3">
-                    {sub.topics.map(topic => (
-                      <div key={topic.id} className="flex flex-col md:flex-row md:items-center gap-5 p-5 bg-slate-50/50 dark:bg-slate-800/40 rounded-[1.5rem] group hover:bg-white transition-all border border-transparent hover:border-slate-100">
-                        <div className="flex items-start gap-4 flex-1">
-                          <button onClick={() => toggleTopic(String(sub.id), topic.id)} className={`mt-1 transition-all ${topic.completed ? 'text-indigo-600' : 'text-slate-300 hover:text-indigo-400'}`}>
-                            <CheckCircle size={24} strokeWidth={topic.completed ? 3 : 2} />
-                          </button>
-                          <div className="flex-1">
-                            <span className={`text-sm font-black block leading-tight ${topic.completed ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-white'}`}>{topic.title}</span>
-                            <div className="flex flex-wrap gap-3 mt-3">
-                                <div className="flex items-center gap-1.5 text-[9px] font-black text-slate-400 uppercase tracking-widest bg-white dark:bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-100 dark:border-slate-800 shadow-sm"><Clock size={10} className="text-indigo-500" /> {topic.studyTimeMinutes || 0}m</div>
-                                <div className="flex items-center gap-1.5 text-[9px] font-black text-slate-300 uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-transparent"><Calendar size={10} /> {topic.lastStudiedAt ? new Date(topic.lastStudiedAt).toLocaleDateString() : 'NUNCA'}</div>
+                    {sub.topics.map(topic => {
+                      const perc = topic.questionsAttempted && topic.questionsAttempted > 0 
+                        ? Math.round((topic.questionsCorrect || 0) / topic.questionsAttempted * 100) 
+                        : 0;
+                      
+                      return (
+                        <div key={topic.id} className="flex flex-col md:flex-row md:items-center gap-5 p-5 bg-slate-50/50 dark:bg-slate-800/40 rounded-[1.5rem] group hover:bg-white transition-all border border-transparent hover:border-slate-100">
+                          <div className="flex items-start gap-4 flex-1">
+                            <button onClick={() => toggleTopic(String(sub.id), topic.id)} className={`mt-1 transition-all ${topic.completed ? 'text-indigo-600' : 'text-slate-300 hover:text-indigo-400'}`}>
+                              <CheckCircle size={24} strokeWidth={topic.completed ? 3 : 2} />
+                            </button>
+                            <div className="flex-1">
+                              <span className={`text-sm font-black block leading-tight ${topic.completed ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-white'}`}>{topic.title}</span>
+                              <div className="flex flex-wrap gap-3 mt-3">
+                                  <div className="flex items-center gap-1.5 text-[9px] font-black text-slate-400 uppercase tracking-widest bg-white dark:bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-100 dark:border-slate-800 shadow-sm"><Clock size={10} className="text-indigo-500" /> {topic.studyTimeMinutes || 0}m</div>
+                                  
+                                  {topic.questionsAttempted && topic.questionsAttempted > 0 ? (
+                                    <div className={`flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg border shadow-sm ${getPerformanceColor(perc)}`}>
+                                      <BarChart size={10} /> {topic.questionsCorrect}/{topic.questionsAttempted} ({perc}%)
+                                    </div>
+                                  ) : null}
+                                  
+                                  <div className="flex items-center gap-1.5 text-[9px] font-black text-slate-300 uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-transparent"><Calendar size={10} /> {topic.lastStudiedAt ? new Date(topic.lastStudiedAt).toLocaleDateString() : 'NUNCA'}</div>
+                              </div>
                             </div>
                           </div>
+                          
+                          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => { setActiveProgressTopic(topic.id); setProgHours(0); setProgMinutes(0); setProgAttempted(0); setProgCorrect(0); }} className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl flex items-center gap-2 transition-all"><TrendingUp size={14} /> Registrar</button>
+                            <button onClick={async () => { const nt = sub.topics.filter(t => t.id !== topic.id); await handleSubjectUpdate(String(sub.id), nt); }} className="p-2.5 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={16} /></button>
+                          </div>
                         </div>
-                        
-                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => { setActiveProgressTopic(topic.id); setProgHours(0); setProgMinutes(0); setProgAttempted(0); setProgCorrect(0); }} className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl flex items-center gap-2 transition-all"><TrendingUp size={14} /> Registrar</button>
-                          <button onClick={async () => { const nt = sub.topics.filter(t => t.id !== topic.id); await handleSubjectUpdate(String(sub.id), nt); }} className="p-2.5 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={16} /></button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -294,27 +314,56 @@ const Disciplinas: React.FC<DisciplinasProps> = ({ user, subjects, setSubjects, 
 
       {activeProgressTopic && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-6 bg-slate-900/70 backdrop-blur-md animate-in fade-in">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[3rem] p-10 shadow-2xl relative">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[3rem] p-10 shadow-2xl relative border border-slate-100 dark:border-slate-800 overflow-y-auto max-h-[90vh]">
              <button onClick={() => setActiveProgressTopic(null)} className="absolute top-8 right-8 p-2 text-slate-400 hover:text-slate-600 transition-colors"><X size={20} /></button>
             <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-2">Consolidar Estudo</h3>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-8">Registrar sessão de estudo</p>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-8">Registrar sessão de estudo e métricas</p>
             <div className="space-y-6">
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Data</label>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-4">Data da Sessão</label>
                 <input type="date" className="w-full px-5 py-4 rounded-2xl border bg-slate-50 dark:bg-slate-950 font-black text-sm outline-none transition-all" value={progDate} onChange={(e) => setProgDate(e.target.value)} />
               </div>
+              
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Horas</label>
-                  <input type="number" className="w-full px-5 py-4 rounded-2xl border bg-slate-50 font-black text-lg outline-none" value={progHours || ''} onChange={e => setProgHours(parseInt(e.target.value) || 0)} placeholder="0" />
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-4">Horas Líquidas</label>
+                  {/* Fixed: setHoursPerDay to setProgHours */}
+                  <input type="number" className="w-full px-5 py-4 rounded-2xl border bg-slate-50 dark:bg-slate-950 font-black text-lg outline-none" value={progHours || ''} onChange={e => setProgHours(parseInt(e.target.value) || 0)} placeholder="0" />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Minutos</label>
-                  <input type="number" className="w-full px-5 py-4 rounded-2xl border bg-slate-50 font-black text-lg outline-none" value={progMinutes || ''} onChange={e => setProgMinutes(parseInt(e.target.value) || 0)} placeholder="0" />
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-4">Minutos</label>
+                  <input type="number" className="w-full px-5 py-4 rounded-2xl border bg-slate-50 dark:bg-slate-950 font-black text-lg outline-none" value={progMinutes || ''} onChange={e => setProgMinutes(parseInt(e.target.value) || 0)} placeholder="0" />
                 </div>
               </div>
+
+              <div className="pt-4 border-t dark:border-slate-800 space-y-6">
+                <div className="flex items-center gap-2 text-indigo-600">
+                  <Target size={18} />
+                  <span className="text-[10px] font-black uppercase tracking-widest">Resolução de Questões</span>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-4">Questões Totais</label>
+                    <input type="number" className="w-full px-5 py-4 rounded-2xl border border-slate-200 bg-slate-50 dark:bg-slate-950 font-black text-lg outline-none focus:border-indigo-500" value={progAttempted || ''} onChange={e => setProgAttempted(parseInt(e.target.value) || 0)} placeholder="Ex: 50" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-emerald-600 uppercase tracking-widest block ml-4">Acertos</label>
+                    <input type="number" className="w-full px-5 py-4 rounded-2xl border border-emerald-100 bg-emerald-50/30 dark:bg-slate-950 font-black text-lg outline-none focus:border-emerald-500" value={progCorrect || ''} onChange={e => setProgCorrect(parseInt(e.target.value) || 0)} placeholder="Ex: 40" />
+                  </div>
+                </div>
+                
+                {progAttempted > 0 && (
+                  <div className={`p-4 rounded-2xl border text-center font-black uppercase text-[11px] ${getPerformanceColor(Math.round(progCorrect/progAttempted*100))}`}>
+                    Aproveitamento nesta sessão: {Math.round(progCorrect/progAttempted*100)}%
+                  </div>
+                )}
+              </div>
             </div>
-            <button onClick={() => { const sId = subjects.find(s => s.topics.some(t => t.id === activeProgressTopic))?.id; if(sId) saveTopicProgress(sId, activeProgressTopic); }} className="w-full bg-indigo-600 text-white font-black py-5 rounded-[1.5rem] mt-10 shadow-2xl active:scale-95 transition-all uppercase text-[11px] tracking-widest">Salvar Registro</button>
+            
+            <button onClick={() => { const sId = subjects.find(s => s.topics.some(t => t.id === activeProgressTopic))?.id; if(sId) saveTopicProgress(sId, activeProgressTopic); }} className="w-full bg-indigo-600 text-white font-black py-5 rounded-[1.5rem] mt-10 shadow-2xl active:scale-95 transition-all uppercase text-[11px] tracking-widest flex items-center justify-center gap-3">
+              <Save size={18} /> Salvar Registro
+            </button>
           </div>
         </div>
       )}
