@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Subject, Topic, User } from '../types';
+import { Subject, Topic, User, StudySession } from '../types';
 import { supabase } from '../lib/supabase';
 import { 
   RefreshCcw, Bell, CheckCircle, Calendar, AlertCircle, History, CheckCircle2, Loader2
@@ -10,7 +10,8 @@ interface RevisaoProps {
   user: User;
   subjects: Subject[];
   setSubjects: React.Dispatch<React.SetStateAction<Subject[]>>;
-  onAddLog: (minutes: number, topicId: string, subjectId: string, date: string) => void;
+  // Fixed onAddLog signature to be consistent with StudySession type used in handleAddLogLocally in App.tsx
+  onAddLog: (log: StudySession) => void;
 }
 
 const Revisao: React.FC<RevisaoProps> = ({ user, subjects, setSubjects, onAddLog }) => {
@@ -64,7 +65,18 @@ const Revisao: React.FC<RevisaoProps> = ({ user, subjects, setSubjects, onAddLog
         await supabase.from('subjects').update({ topics: updatedTopics }).eq('id', subjectId).eq('user_id', user.id);
       }
       setSubjects(prev => prev.map(s => String(s.id) === String(subjectId) ? { ...s, topics: updatedTopics } : s));
-      if (editMinutes > 0) onAddLog(editMinutes, topicId, subjectId, new Date().toISOString());
+      
+      // Fixed: Construct a StudySession object for consistency with other components and passed handler
+      if (editMinutes > 0) {
+        onAddLog({
+          id: `rev-${Date.now()}`,
+          topicId: topicId,
+          subjectId: subjectId,
+          minutes: editMinutes,
+          date: new Date().toISOString(),
+          type: 'revisao'
+        });
+      }
       setEditingTopicId(null);
     } catch (err: any) {
       console.error(err);

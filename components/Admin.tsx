@@ -1,11 +1,11 @@
 
 import React, { useState, useMemo } from 'react';
-import { User, PredefinedEdital, Subject } from '../types';
+import { User, PredefinedEdital, Subject, Topic } from '../types';
 import { supabase } from '../lib/supabase';
 import { 
-  Trash2, Edit3, X, Save, Search, Shield, User as UserIcon, Loader2, 
-  Database, Plus, UserPlus, AlertTriangle, ShieldCheck, Mail, Lock, UserCheck,
-  Wifi, WifiOff, Copy, Check, ShieldAlert, CheckCircle2, Ban
+  Trash2, Edit3, X, Save, Search, User as UserIcon, Loader2, 
+  Plus, UserPlus, ShieldCheck, ShieldAlert, CheckCircle2, Ban,
+  FileText, Database, Calendar, Globe
 } from 'lucide-react';
 
 interface AdminProps {
@@ -20,234 +20,137 @@ interface AdminProps {
 const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditais, view }) => {
   if (user.role !== 'administrator') {
     return (
-      <div className="h-full flex flex-col items-center justify-center p-10 animate-in fade-in zoom-in duration-500">
-        <div className="w-24 h-24 bg-rose-500/10 text-rose-500 rounded-3xl flex items-center justify-center mb-6 border border-rose-500/20 shadow-[0_0_30px_rgba(244,63,94,0.2)]">
-          <Ban size={48} />
-        </div>
-        <h2 className="text-3xl font-black text-white tracking-tighter uppercase mb-2">ACESSO NEGADO</h2>
-        <p className="text-slate-500 font-bold text-[10px] uppercase tracking-[0.4em] max-w-md text-center">
-          Seu terminal não possui privilégios de nível <span className="text-rose-500">ADMINISTRADOR</span> para acessar este núcleo.
-        </p>
+      <div className="h-full flex flex-col items-center justify-center p-10">
+        <div className="w-20 h-20 bg-rose-500/10 text-rose-500 rounded-3xl flex items-center justify-center mb-6"><Ban size={40} /></div>
+        <h2 className="text-2xl font-black text-white uppercase tracking-tighter">ACESSO NEGADO</h2>
       </div>
     );
   }
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [editingUser, setEditingUser] = useState<User | any>(null);
-  const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
   const [loadingId, setLoadingId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  
+  // States para Editais
+  const [isEditalModalOpen, setIsEditalModalOpen] = useState(false);
+  const [editingEdital, setEditingEdital] = useState<PredefinedEdital | null>(null);
+  const [editalName, setEditalName] = useState('');
+  const [editalOrg, setEditalOrg] = useState('');
+  const [editalDate, setEditalDate] = useState('');
 
-  const [newName, setNewName] = useState('');
-  const [newEmail, setNewEmail] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [newRole, setNewRole] = useState<'administrator' | 'student' | 'visitor'>('student');
-
-  const [editName, setEditName] = useState('');
-  const [editRole, setEditRole] = useState<'administrator' | 'student' | 'visitor'>('student');
-  const [editStatus, setEditStatus] = useState<'active' | 'blocked'>('active');
-
-  const filteredUsers = useMemo(() => {
-    return users.filter(u => 
-      u.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      u.email?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [users, searchTerm]);
-
-  const handleAddUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!supabase) return;
-    setLoadingId('add-user');
-    setError(null);
-    try {
-      const { data, error: authError } = await supabase.auth.signUp({
-        email: newEmail, 
-        password: newPassword, 
-        options: { data: { full_name: newName, role: newRole } }
-      });
-      if (authError) throw authError;
-      if (data.user) {
-        await supabase.from('profiles').update({ name: newName, role: newRole, email: newEmail, status: 'active' }).eq('id', data.user.id);
-        const newUser: User = { id: data.user.id, name: newName, email: newEmail, role: newRole, status: 'active', isOnline: false };
-        setUsers(prev => [newUser, ...prev]);
-        setIsAddUserModalOpen(false);
-        setNewName(''); setNewEmail(''); setNewPassword('');
-      }
-    } catch (err: any) { 
-      setError(err.message || "Erro ao criar usuário."); 
-    } finally { setLoadingId(null); }
-  };
-
-  const handleUpdateUser = async () => {
-    if (!editingUser || !supabase) return;
-    setLoadingId(editingUser.id);
-    try {
-      const { error: updError } = await supabase.from('profiles')
-        .update({ name: editName, role: editRole, status: editStatus })
-        .eq('id', editingUser.id);
-      
-      if (updError) throw updError;
-      
-      setUsers(prev => prev.map(u => u.id === editingUser.id ? { ...u, name: editName, role: editRole, status: editStatus } : u));
-      setEditingUser(null);
-    } catch (err: any) { 
-      alert("Erro ao atualizar perfil."); 
-    } finally { setLoadingId(null); }
-  };
-
-  // EXCLUSÃO FÍSICA E DEFINITIVA NO BANCO DE DADOS
-  const executeDeleteUser = async () => {
-    if (!userToDelete || !supabase) return;
-    const targetId = userToDelete.id;
-    setLoadingId(targetId);
+  // Sincronização de Editais
+  const handleSaveEdital = async () => {
+    if (!editalName || !editalOrg || !supabase) return;
+    setLoadingId('save-edital');
     
-    try {
-      // 1. Comando de exclusão física na tabela profiles
-      const { error: delError } = await supabase.from('profiles')
-        .delete()
-        .eq('id', targetId);
-      
-      if (delError) throw delError;
+    const payload = {
+      name: editalName,
+      organization: editalOrg,
+      exam_date: editalDate,
+      subjects: editingEdital?.subjects || [],
+      last_updated: new Date().toISOString()
+    };
 
-      // 2. Sincronizar UI local: Remova apenas se o banco confirmou a exclusão
-      setUsers(prev => prev.filter(u => u.id !== targetId));
-      setUserToDelete(null);
-    } catch (err: any) { 
-      alert("FALHA CRÍTICA: Não foi possível apagar o registro físico no banco de dados. " + (err.message || "")); 
-    } finally { setLoadingId(null); }
+    try {
+      if (editingEdital) {
+        const { data, error } = await supabase.from('predefined_editais').update(payload).eq('id', editingEdital.id).select().single();
+        if (error) throw error;
+        setEditais(prev => prev.map(e => e.id === editingEdital.id ? { ...data, id: String(data.id), examDate: data.exam_date, lastUpdated: data.last_updated } : e));
+      } else {
+        const { data, error } = await supabase.from('predefined_editais').insert([payload]).select().single();
+        if (error) throw error;
+        setEditais(prev => [{ ...data, id: String(data.id), examDate: data.exam_date, lastUpdated: data.last_updated }, ...prev]);
+      }
+      setIsEditalModalOpen(false);
+      setEditingEdital(null);
+      setEditalName(''); setEditalOrg(''); setEditalDate('');
+    } catch (e) {
+      alert("Erro ao salvar edital.");
+    } finally {
+      setLoadingId(null);
+    }
   };
 
-  if (view === 'users') {
+  const handleDeleteEdital = async (id: string) => {
+    if (!window.confirm("Apagar permanentemente esta matriz?") || !supabase) return;
+    setLoadingId(id);
+    try {
+      await supabase.from('predefined_editais').delete().eq('id', id);
+      setEditais(prev => prev.filter(e => e.id !== id));
+    } catch (e) {
+      alert("Erro ao deletar.");
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
+  if (view === 'editais') {
     return (
-      <div className="space-y-8 animate-in fade-in duration-700 pb-20">
-        <header className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6">
+      <div className="space-y-8 animate-in fade-in duration-500">
+        <header className="flex justify-between items-end">
           <div>
-            <h2 className="text-4xl font-black text-white tracking-tighter uppercase leading-none">GOVERNANÇA</h2>
-            <p className="text-slate-500 font-bold mt-3 text-[10px] uppercase tracking-[0.4em] flex items-center gap-2">
-              <ShieldCheck size={14} className="text-indigo-500" /> CONTROLE RIGOROSO DE REGISTROS ATIVOS
-            </p>
+            <h2 className="text-4xl font-black text-white tracking-tighter uppercase leading-none">CORE EDITAIS</h2>
+            <p className="text-slate-500 font-bold mt-3 text-[10px] uppercase tracking-[0.4em]">Gestão de Matrizes Predefinidas</p>
           </div>
-          <div className="flex flex-col md:flex-row gap-4 w-full lg:w-auto">
-            <div className="relative group flex-1 lg:w-80">
-              <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors" size={18} />
-              <input type="text" placeholder="BUSCAR OPERADOR..." className="w-full pl-14 pr-6 py-4 bg-black/40 border border-white/5 rounded-2xl outline-none focus:border-indigo-500 font-black text-white text-[10px] tracking-widest uppercase transition-all shadow-2xl" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-            </div>
-            <button onClick={() => { setError(null); setIsAddUserModalOpen(true); }} className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-indigo-500 transition-all flex items-center justify-center gap-3 active:scale-95">
-              <UserPlus size={18} /> CADASTRAR OPERADOR
-            </button>
-          </div>
+          <button onClick={() => { setEditingEdital(null); setEditalName(''); setEditalOrg(''); setEditalDate(''); setIsEditalModalOpen(true); }} className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-500 transition-all shadow-xl">
+            <Plus size={16} className="inline mr-2" /> NOVA MATRIZ
+          </button>
         </header>
 
-        <div className="glass-card rounded-[2.5rem] overflow-hidden border border-white/5 shadow-2xl">
-          <div className="overflow-x-auto custom-scrollbar">
-            <table className="w-full text-left">
-              <thead className="bg-white/5 border-b border-white/5">
-                <tr>
-                  <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-[0.2em]">OPERADOR</th>
-                  <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-[0.2em]">NÍVEL</th>
-                  <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-[0.2em] text-center">STATUS NO BANCO</th>
-                  <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-[0.2em] text-right">AÇÕES</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {filteredUsers.map(u => {
-                  const isMaster = u.role === 'administrator';
-                  return (
-                    <tr key={u.id} className="hover:bg-white/[0.02] transition-all group">
-                      <td className="px-10 py-6">
-                        <div className="flex items-center gap-5">
-                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-sm border transition-all ${isMaster ? 'bg-indigo-600 text-white border-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.3)]' : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'}`}>
-                            {u.name?.charAt(0) || '?'}
-                          </div>
-                          <div>
-                            <p className="text-sm font-black text-white leading-none uppercase tracking-tight">{u.name || 'SEM NOME'}</p>
-                            <p className="text-[9px] text-slate-600 font-bold uppercase tracking-wider mt-1">{u.email}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-10 py-6">
-                        <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest border ${isMaster ? 'bg-indigo-600/10 border-indigo-500/20 text-indigo-400' : 'bg-slate-500/10 border-slate-500/20 text-slate-400'}`}>
-                          {isMaster ? <ShieldCheck size={10} /> : <UserIcon size={10} />}
-                          {u.role}
-                        </div>
-                      </td>
-                      <td className="px-10 py-6 text-center">
-                        <span className={`px-4 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest border transition-all ${u.status === 'active' ? 'bg-emerald-500/5 text-emerald-500 border-emerald-500/10' : 'bg-rose-500/5 text-rose-500 border-rose-500/10'}`}>
-                          {u.status === 'active' ? 'ATIVO NO SISTEMA' : 'BLOQUEADO'}
-                        </span>
-                      </td>
-                      <td className="px-10 py-6 text-right">
-                        <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
-                          <button onClick={() => { setEditingUser(u); setEditName(u.name); setEditRole(u.role); setEditStatus(u.status); }} className="p-3 bg-white/5 border border-white/5 text-slate-400 hover:text-indigo-400 rounded-xl transition-all" title="Editar Perfil"><Edit3 size={16} /></button>
-                          <button onClick={() => setUserToDelete(u)} disabled={u.id === user.id} className={`p-3 bg-white/5 border border-white/5 rounded-xl transition-all ${u.id === user.id ? 'opacity-20 cursor-not-allowed' : 'text-slate-400 hover:text-rose-500'}`} title="Remover Fisicamente"><Trash2 size={16} /></button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {editais.map(e => (
+            <div key={e.id} className="glass-card p-8 rounded-[2rem] border border-white/5 hover:border-indigo-500/30 transition-all group">
+               <div className="flex justify-between items-start mb-6">
+                  <div className="w-12 h-12 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-400">
+                    <Database size={24} />
+                  </div>
+                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                    <button onClick={() => { setEditingEdital(e); setEditalName(e.name); setEditalOrg(e.organization); setEditalDate(e.examDate || ''); setIsEditalModalOpen(true); }} className="p-2 bg-white/5 rounded-lg text-slate-400 hover:text-indigo-400"><Edit3 size={14}/></button>
+                    <button onClick={() => handleDeleteEdital(e.id)} className="p-2 bg-white/5 rounded-lg text-slate-400 hover:text-rose-500"><Trash2 size={14}/></button>
+                  </div>
+               </div>
+               <h3 className="font-black text-white uppercase text-lg leading-tight mb-2">{e.name}</h3>
+               <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-6">{e.organization}</p>
+               <div className="flex items-center justify-between pt-6 border-t border-white/5">
+                 <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                   <Calendar size={12}/> {e.examDate || 'A definir'}
+                 </div>
+                 <div className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">
+                   {e.subjects.length} DISCIPLINAS
+                 </div>
+               </div>
+            </div>
+          ))}
+          {editais.length === 0 && (
+            <div className="col-span-full py-20 text-center glass-card rounded-[2rem] border-dashed">
+               <Database size={48} className="mx-auto text-slate-800 mb-4" />
+               <p className="text-slate-500 font-black text-[10px] uppercase tracking-widest">Nenhuma matriz cadastrada no Core.</p>
+            </div>
+          )}
         </div>
 
-        {/* MODAL: CONFIRMAÇÃO DE EXCLUSÃO FÍSICA */}
-        {userToDelete && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-slate-950/90 backdrop-blur-2xl animate-in fade-in">
-            <div className="glass-card w-full max-w-md rounded-[3rem] p-12 border border-rose-500/20 text-center shadow-[0_0_60px_rgba(244,63,94,0.1)]">
-              <div className="w-20 h-20 bg-rose-500/10 text-rose-500 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 border border-rose-500/20">
-                <ShieldAlert size={40} className="animate-pulse" />
-              </div>
-              <h3 className="text-2xl font-black text-white uppercase tracking-tighter mb-4">REMOVER REGISTRO?</h3>
-              <p className="text-slate-400 text-xs font-bold leading-relaxed mb-10 uppercase tracking-wide">
-                Deseja apagar fisicamente o registro de <span className="text-rose-400">"{userToDelete.name}"</span> do banco de dados? Esta ação garante que a tabela não contenha usuários excluídos.
-              </p>
-              <div className="flex flex-col gap-4">
-                <button onClick={executeDeleteUser} disabled={!!loadingId} className="w-full bg-rose-600 text-white font-black py-5 rounded-2xl text-[10px] hover:bg-rose-500 transition-all uppercase flex justify-center items-center gap-3 tracking-widest shadow-xl shadow-rose-950/20">
-                  {loadingId === userToDelete.id ? <Loader2 className="animate-spin" size={16} /> : <Trash2 size={16}/>} CONFIRMAR DELEÇÃO FÍSICA
-                </button>
-                <button onClick={() => setUserToDelete(null)} className="w-full py-4 text-[9px] font-black text-slate-500 uppercase tracking-widest hover:text-white transition-colors">CANCELAR</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* MODAL: EDITAR OPERADOR */}
-        {editingUser && (
+        {isEditalModalOpen && (
           <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-slate-950/90 backdrop-blur-xl animate-in fade-in">
             <div className="glass-card w-full max-w-lg rounded-[3rem] p-12 border border-white/10 shadow-2xl relative">
               <div className="flex justify-between items-center mb-10">
-                <h3 className="text-2xl font-black text-white uppercase tracking-tighter">CONFIGURAR OPERADOR</h3>
-                <button onClick={() => setEditingUser(null)} className="p-2 text-slate-500 hover:text-white transition-colors"><X size={32}/></button>
+                <h3 className="text-2xl font-black text-white uppercase tracking-tighter">{editingEdital ? 'EDITAR MATRIZ' : 'CRIAR MATRIZ'}</h3>
+                <button onClick={() => setIsEditalModalOpen(false)} className="p-2 text-slate-500 hover:text-white"><X size={32}/></button>
               </div>
               <div className="space-y-6">
                 <div className="space-y-2">
-                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">NOME EXIBIDO</label>
-                  <input value={editName} onChange={e=>setEditName(e.target.value)} className="w-full px-6 py-4 bg-black/40 border border-white/5 rounded-2xl font-black text-white text-xs outline-none focus:border-indigo-500 uppercase transition-all" />
+                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">NOME DO CERTAME</label>
+                  <input value={editalName} onChange={e=>setEditalName(e.target.value)} className="w-full px-6 py-4 bg-black/40 border border-white/5 rounded-2xl text-white text-xs outline-none focus:border-indigo-500 uppercase" placeholder="Ex: PF 2024 - Agente" />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">NÍVEL DE ACESSO</label>
-                    <select value={editRole} onChange={e=>setEditRole(e.target.value as any)} className="w-full px-6 py-4 bg-black/40 border border-white/5 rounded-2xl font-black text-white text-[10px] outline-none focus:border-indigo-500 uppercase appearance-none">
-                      <option value="student">ESTUDANTE</option>
-                      <option value="administrator">ADMINISTRADOR</option>
-                      <option value="visitor">VISITANTE</option>
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">STATUS ATUAL</label>
-                    <select value={editStatus} onChange={e=>setEditStatus(e.target.value as any)} className={`w-full px-6 py-4 bg-black/40 border border-white/5 rounded-2xl font-black text-[10px] outline-none focus:border-indigo-500 uppercase appearance-none ${editStatus === 'blocked' ? 'text-rose-500' : 'text-emerald-500'}`}>
-                      <option value="active">ATIVO</option>
-                      <option value="blocked">BLOQUEADO</option>
-                    </select>
-                  </div>
+                <div className="space-y-2">
+                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">ORGANIZAÇÃO / BANCA</label>
+                  <input value={editalOrg} onChange={e=>setEditalOrg(e.target.value)} className="w-full px-6 py-4 bg-black/40 border border-white/5 rounded-2xl text-white text-xs outline-none focus:border-indigo-500 uppercase" placeholder="Ex: CEBRASPE" />
                 </div>
-                <div className="flex gap-4 pt-6">
-                  <button onClick={()=>setEditingUser(null)} className="flex-1 p-4 font-black text-slate-500 text-[10px] uppercase hover:text-white transition-colors">CANCELAR</button>
-                  <button onClick={handleUpdateUser} disabled={!!loadingId} className="flex-[2] bg-indigo-600 text-white p-5 rounded-2xl font-black text-[11px] uppercase tracking-widest hover:bg-indigo-500 transition-all flex justify-center items-center gap-3">
-                    {loadingId === editingUser.id ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle2 size={20}/>} SALVAR ALTERAÇÕES
-                  </button>
+                <div className="space-y-2">
+                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">DATA PREVISTA</label>
+                  <input type="date" value={editalDate} onChange={e=>setEditalDate(e.target.value)} className="w-full px-6 py-4 bg-black/40 border border-white/5 rounded-2xl text-white text-xs outline-none focus:border-indigo-500" />
                 </div>
+                <button onClick={handleSaveEdital} disabled={!!loadingId} className="w-full bg-indigo-600 text-white p-5 rounded-2xl font-black text-[11px] uppercase tracking-widest hover:bg-indigo-500 transition-all flex justify-center items-center gap-3 mt-6">
+                  {loadingId === 'save-edital' ? <Loader2 className="animate-spin" size={20} /> : <Save size={20}/>} SALVAR MATRIZ NO CORE
+                </button>
               </div>
             </div>
           </div>
@@ -256,7 +159,63 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
     );
   }
 
-  return null;
+  // Render original User Management if view === 'users'
+  const filteredUsers = useMemo(() => users.filter(u => u.name?.toLowerCase().includes(searchTerm.toLowerCase()) || u.email?.toLowerCase().includes(searchTerm.toLowerCase())), [users, searchTerm]);
+
+  return (
+    <div className="space-y-8 animate-in fade-in duration-700">
+      <header className="flex justify-between items-end">
+        <div>
+          <h2 className="text-4xl font-black text-white tracking-tighter uppercase leading-none">GOVERNANÇA</h2>
+          <p className="text-slate-500 font-bold mt-3 text-[10px] uppercase tracking-[0.4em]">Controle de Acessos ao Sistema</p>
+        </div>
+        <div className="flex gap-4">
+          <div className="relative w-64">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={14}/>
+            <input type="text" placeholder="BUSCAR OPERADOR..." className="w-full pl-12 pr-6 py-4 bg-black/40 border border-white/5 rounded-2xl outline-none focus:border-indigo-500 font-black text-white text-[10px] tracking-widest uppercase transition-all" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+          </div>
+        </div>
+      </header>
+
+      <div className="glass-card rounded-[2.5rem] overflow-hidden border border-white/5">
+        <table className="w-full text-left">
+          <thead className="bg-white/5 border-b border-white/5">
+            <tr>
+              <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-widest">OPERADOR</th>
+              <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-widest">NÍVEL</th>
+              <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-widest text-right">AÇÕES</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/5">
+            {filteredUsers.map(u => (
+              <tr key={u.id} className="hover:bg-white/[0.02] transition-all group">
+                <td className="px-10 py-6">
+                  <div className="flex items-center gap-5">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center font-black">{u.name?.charAt(0)}</div>
+                    <div>
+                      <p className="text-sm font-black text-white uppercase tracking-tight">{u.name}</p>
+                      <p className="text-[9px] text-slate-600 font-bold mt-1">{u.email}</p>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-10 py-6">
+                  <span className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase border ${u.role === 'administrator' ? 'bg-indigo-600/10 border-indigo-500/20 text-indigo-400' : 'bg-slate-500/10 border-slate-500/20 text-slate-400'}`}>
+                    {u.role}
+                  </span>
+                </td>
+                <td className="px-10 py-6 text-right">
+                  <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                    <button className="p-3 bg-white/5 border border-white/5 text-slate-400 hover:text-indigo-400 rounded-xl"><Edit3 size={14}/></button>
+                    <button className="p-3 bg-white/5 border border-white/5 text-slate-400 hover:text-rose-500 rounded-xl"><Trash2 size={14}/></button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 };
 
 export default Admin;
