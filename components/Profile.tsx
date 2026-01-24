@@ -50,100 +50,100 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onDelete, onClose, on
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300">
-      <div className="bg-white dark:bg-slate-900 w-full max-w-4xl rounded-[2.5rem] shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden animate-in zoom-in-95 duration-300">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xl animate-in fade-in duration-300">
+      <div className="glass-card w-full max-w-4xl rounded-[2.5rem] border border-white/10 overflow-hidden animate-in zoom-in-95 duration-300">
         
         <div className="p-8 md:p-10">
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-4">
+          <div className="flex items-center justify-between mb-10">
+            <div className="flex items-center gap-5">
               <div className="w-14 h-14 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-lg font-black text-xl">
                 {user.name.charAt(0)}
               </div>
               <div>
-                <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100">Configurações da Conta</h3>
-                <p className="text-xs text-slate-500 font-black uppercase tracking-widest">Gerencie seu perfil e dados</p>
+                <h3 className="text-2xl font-black text-white uppercase tracking-tighter">PERFIL DE USUÁRIO</h3>
+                <p className="text-[9px] text-slate-500 font-black uppercase tracking-[0.4em] mt-1">Configurações de Identidade e Segurança</p>
               </div>
             </div>
-            <button onClick={onClose} className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors">
+            <button onClick={onClose} className="p-2 text-slate-500 hover:text-white transition-colors">
               <X size={24} />
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-            <div className="space-y-8">
-              <form onSubmit={handleUpdateInfo} className="space-y-4">
-                <h4 className="font-black text-slate-800 dark:text-slate-200 text-xs border-b border-slate-100 dark:border-slate-800 pb-2 flex items-center gap-2">
-                  <UserIcon size={14} className="text-indigo-500" /> DADOS PESSOAIS
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+            <div className="space-y-10">
+              <form onSubmit={handleUpdateInfo} className="space-y-6">
+                <h4 className="font-black text-indigo-400 text-[10px] uppercase tracking-[0.3em] border-b border-white/5 pb-3 flex items-center gap-2">
+                  <UserIcon size={14} /> DADOS CADASTRAIS
                 </h4>
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <input 
                     type="text" 
-                    className="w-full px-5 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 dark:text-white text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-5 py-4 rounded-xl border border-white/5 bg-black/40 text-white text-[11px] font-black uppercase tracking-widest outline-none focus:border-indigo-500 transition-all"
                     placeholder="Nome Completo"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                   />
                   <input 
                     type="email" 
-                    className="w-full px-5 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 dark:text-white text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-5 py-4 rounded-xl border border-white/5 bg-black/40 text-white text-[11px] font-black uppercase tracking-widest outline-none focus:border-indigo-500 transition-all"
                     placeholder="E-mail"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                   />
-                  <button type="submit" className="w-full bg-slate-900 dark:bg-slate-800 text-white font-black py-3 rounded-xl text-xs hover:bg-indigo-600 transition-colors">
-                    SALVAR ALTERAÇÕES
+                  <button type="submit" className="w-full bg-indigo-600 text-white font-black py-4 rounded-xl text-[10px] tracking-widest uppercase hover:bg-indigo-500 transition-all shadow-xl">
+                    ATUALIZAR IDENTIDADE
                   </button>
                 </div>
               </form>
 
-              <form onSubmit={handleChangePassword} className="space-y-4">
-                <h4 className="font-black text-slate-800 dark:text-slate-200 text-xs border-b border-slate-100 dark:border-slate-800 pb-2 flex items-center gap-2">
-                  <Lock size={14} className="text-indigo-500" /> SEGURANÇA
+              <form onSubmit={handleChangePassword} className="space-y-6">
+                <h4 className="font-black text-indigo-400 text-[10px] uppercase tracking-[0.3em] border-b border-white/5 pb-3 flex items-center gap-2">
+                  <Lock size={14} /> SEGURANÇA MESTRE
                 </h4>
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <input 
                     type="password" 
-                    className="w-full px-5 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 dark:text-white text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-5 py-4 rounded-xl border border-white/5 bg-black/40 text-white text-[11px] font-black outline-none focus:border-indigo-500 transition-all"
                     placeholder="Nova Senha"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                   />
                   <input 
                     type="password" 
-                    className="w-full px-5 py-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 dark:text-white text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-5 py-4 rounded-xl border border-white/5 bg-black/40 text-white text-[11px] font-black outline-none focus:border-indigo-500 transition-all"
                     placeholder="Confirmar Nova Senha"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                   />
-                  <button type="submit" className="w-full bg-indigo-600 text-white font-black py-3 rounded-xl text-xs hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-100 dark:shadow-none">
-                    ATUALIZAR SENHA
+                  <button type="submit" className="w-full bg-slate-800 text-white font-black py-4 rounded-xl text-[10px] tracking-widest uppercase hover:bg-slate-700 transition-all">
+                    REDEFINIR CREDENCIAIS
                   </button>
                 </div>
               </form>
             </div>
 
-            <div className="space-y-8">
-              <div className="p-8 bg-slate-50 dark:bg-slate-950 rounded-[2rem] border border-slate-100 dark:border-slate-800 space-y-6">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-2xl">
-                    <ShieldAlert size={20} />
+            <div className="space-y-10">
+              <div className="p-10 bg-black/20 rounded-[2.5rem] border border-white/5 space-y-8">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-indigo-500/10 text-indigo-400 rounded-2xl border border-indigo-500/20">
+                    <ShieldAlert size={24} />
                   </div>
                   <div>
-                    <h4 className="font-black text-slate-900 dark:text-slate-100 leading-none">Segurança de Dados</h4>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">Backup local offline</p>
+                    <h4 className="font-black text-white text-lg uppercase tracking-tight leading-none">BACKUP DE DADOS</h4>
+                    <p className="text-[9px] font-black text-slate-500 uppercase mt-1 tracking-widest">Sincronização e redundância</p>
                   </div>
                 </div>
 
-                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
-                  Seus dados estão salvos neste navegador. Para garantir total segurança, baixe um backup manual regularmente.
+                <p className="text-[11px] text-slate-400 leading-relaxed font-bold uppercase tracking-wide">
+                  Seus dados estão sincronizados em tempo real. Para maior segurança, realize backups manuais periodicamente.
                 </p>
 
-                <div className="grid grid-cols-1 gap-3">
+                <div className="grid grid-cols-1 gap-4">
                   <button 
                     onClick={onExport}
-                    className="w-full flex items-center justify-center gap-3 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 font-black py-4 rounded-2xl border border-slate-200 dark:border-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/10 hover:border-indigo-200 transition-all shadow-sm"
+                    className="w-full flex items-center justify-center gap-3 bg-white/5 text-slate-300 font-black py-4 rounded-xl border border-white/5 hover:bg-white/10 hover:border-indigo-500/50 transition-all text-[10px] uppercase tracking-widest"
                   >
-                    <Download size={18} /> EXPORTAR BACKUP (.JSON)
+                    <Download size={18} /> EXPORTAR DATASET (.JSON)
                   </button>
                   
                   <input 
@@ -156,29 +156,27 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onDelete, onClose, on
                   
                   <button 
                     onClick={() => fileInputRef.current?.click()}
-                    className="w-full flex items-center justify-center gap-3 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 font-black py-4 rounded-2xl border border-slate-200 dark:border-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-900/10 hover:border-emerald-200 transition-all shadow-sm"
+                    className="w-full flex items-center justify-center gap-3 bg-white/5 text-slate-300 font-black py-4 rounded-xl border border-white/5 hover:bg-emerald-500/10 hover:border-emerald-500/50 transition-all text-[10px] uppercase tracking-widest"
                   >
-                    <Upload size={18} /> RESTAURAR BACKUP
+                    <Upload size={18} /> RESTAURAR DATASET
                   </button>
                 </div>
               </div>
 
-              {/* TRAVA DE SEGURANÇA: Administrador não pode se auto-excluir */}
-              {/* Fix: Comparing with 'administrator' instead of 'admin' to match User role types */}
               {user.role !== 'administrator' ? (
                 <div className="flex flex-col items-center gap-4 pt-6">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Zona de Risco</p>
+                  <p className="text-[9px] font-black text-slate-600 uppercase tracking-[0.4em]">ZONA DE RISCO CRÍTICO</p>
                   <button 
                     onClick={() => setShowDeleteConfirm(true)}
-                    className="flex items-center gap-2 text-rose-500 font-black text-xs hover:bg-rose-50 dark:hover:bg-rose-900/10 px-6 py-3 rounded-2xl transition-all border border-transparent hover:border-rose-100"
+                    className="flex items-center gap-2 text-rose-500/60 font-black text-[10px] uppercase tracking-widest hover:text-rose-500 transition-all"
                   >
-                    <Trash2 size={16} /> EXCLUIR CONTA PERMANENTEMENTE
+                    <Trash2 size={16} /> EXCLUIR CONTA DEFINITIVAMENTE
                   </button>
                 </div>
               ) : (
                 <div className="pt-6 text-center">
-                   <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-slate-400 font-bold text-[10px] uppercase">
-                     <ShieldCheck size={14} /> Conta de Administrador Protegida
+                   <div className="inline-flex items-center gap-2 px-6 py-2 bg-indigo-500/5 rounded-xl border border-indigo-500/20 text-indigo-400 font-black text-[9px] uppercase tracking-[0.3em]">
+                     <ShieldCheck size={14} /> CONTA PROTEGIDA PELO SISTEMA
                    </div>
                 </div>
               )}
@@ -188,18 +186,18 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onDelete, onClose, on
       </div>
 
       {showDeleteConfirm && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[2.5rem] p-10 text-center border border-slate-100 dark:border-slate-800 shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="w-20 h-20 bg-rose-50 dark:bg-rose-900/20 text-rose-500 rounded-3xl flex items-center justify-center mx-auto mb-6">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md animate-in fade-in">
+          <div className="glass-card w-full max-w-md rounded-[2.5rem] p-12 text-center border border-rose-500/20 shadow-[0_0_50px_rgba(244,63,94,0.1)]">
+            <div className="w-20 h-20 bg-rose-500/10 text-rose-500 rounded-[2rem] flex items-center justify-center mx-auto mb-8 border border-rose-500/20">
               <AlertTriangle size={40} />
             </div>
-            <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 mb-4">Ação Irreversível</h3>
-            <p className="text-slate-500 dark:text-slate-400 mb-8 font-medium">
-              Tem certeza que deseja excluir sua conta? Todos os seus ciclos, estatísticas e disciplinas serão removidos permanentemente deste dispositivo.
+            <h3 className="text-2xl font-black text-white uppercase tracking-tighter mb-4">AÇÃO IRREVERSÍVEL</h3>
+            <p className="text-slate-400 text-xs font-bold leading-relaxed mb-10 uppercase tracking-wide">
+              Tem certeza que deseja apagar todos os seus registros de combate? Esta ação destruirá permanentemente seu progresso.
             </p>
-            <div className="flex flex-col gap-3">
-              <button onClick={onDelete} className="w-full bg-rose-500 text-white font-black py-4 rounded-2xl hover:bg-rose-600 transition-all shadow-lg shadow-rose-100 dark:shadow-none">SIM, EXCLUIR TUDO</button>
-              <button onClick={() => setShowDeleteConfirm(false)} className="w-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold py-4 rounded-2xl hover:bg-slate-200 transition-colors">CANCELAR</button>
+            <div className="flex flex-col gap-4">
+              <button onClick={onDelete} className="w-full bg-rose-600 text-white font-black py-5 rounded-xl text-[10px] tracking-widest hover:bg-rose-500 transition-all shadow-xl shadow-rose-900/20">CONFIRMAR EXCLUSÃO</button>
+              <button onClick={() => setShowDeleteConfirm(false)} className="w-full text-slate-500 font-black text-[10px] tracking-widest uppercase py-4">VOLTAR PARA SEGURANÇA</button>
             </div>
           </div>
         </div>
