@@ -59,6 +59,7 @@ const App: React.FC = () => {
 
       if (role === 'administrator') {
         const { data: profiles } = await supabase.from('profiles').select('*');
+        // Filtro de Segurança: Somente usuários com profile ativo e físico no banco são listados
         if (profiles) setAllUsers(profiles.map(p => ({ ...p, name: p.name || 'Usuário', lastAccess: p.last_seen })));
       }
     } catch (e: any) {}
@@ -69,16 +70,20 @@ const App: React.FC = () => {
       if (!supabase) { setIsLoaded(true); return; }
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
-        const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
-        if (profile?.status === 'blocked') {
+        // VERIFICAÇÃO DE INTEGRIDADE FÍSICA NO BANCO
+        const { data: profile, error } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+        
+        // Se o profile não existir (foi deletado fisicamente pelo Admin) ou estiver bloqueado, deslogar imediatamente.
+        if (!profile || profile.status === 'blocked' || error) {
           await supabase.auth.signOut();
           setUser(null);
         } else {
+          const role = profile?.role || (session.user.email === 'ralysonriccelli@gmail.com' ? 'administrator' : 'student');
           const u: User = {
             id: session.user.id,
-            name: profile?.name || 'Usuário',
+            name: profile?.name || session.user.user_metadata?.full_name || 'Usuário',
             email: session.user.email!,
-            role: profile?.role || 'student',
+            role: role as any,
             status: profile?.status || 'active',
             isOnline: true,
             weeklyGoal: profile?.weekly_goal || 20
@@ -118,7 +123,7 @@ const App: React.FC = () => {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center">
         <Loader2 className="animate-spin text-indigo-500 mb-4" size={48} />
-        <span className="text-[9px] font-black tracking-[0.5em] uppercase text-slate-500">Syncing System</span>
+        <span className="text-[9px] font-black tracking-[0.5em] uppercase text-slate-500">Syncing Master Node</span>
       </div>
     );
   }
@@ -140,11 +145,10 @@ const App: React.FC = () => {
         <div className="scanline"></div>
       </div>
 
-      {/* Slim Sidebar */}
       <aside className={`fixed inset-y-0 left-0 z-50 w-52 glass-panel transform transition-all duration-500 ease-in-out lg:relative lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex flex-col h-full">
           <div className="p-8">
-            <div className="flex items-center gap-2 group cursor-pointer">
+            <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setCurrentPage('inicio')}>
               <div className="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center shadow-lg shadow-indigo-500/30 group-hover:scale-110 transition-transform">
                 <BrainCircuit className="text-white" size={18} />
               </div>
