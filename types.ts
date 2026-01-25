@@ -41,8 +41,32 @@ export interface Subject {
   color: string;
 }
 
+export enum NivelConhecimento {
+  INICIANTE = 'Iniciante',
+  INTERMEDIARIO = 'Intermediário',
+  AVANCADO = 'Avançado'
+}
+
+export enum PesoDisciplina {
+  BAIXO = 'Baixo',
+  NORMAL = 'Normal',
+  ALTO = 'Alto'
+}
+
+export interface CycleSubject extends Subject {
+  nivelConhecimento: NivelConhecimento;
+  peso: PesoDisciplina;
+  tempoEstudo: number;
+}
+
+export interface Ciclo {
+  id: number;
+  materias: Array<Partial<CycleSubject> & { instanceId: string }>;
+  tempoTotal: number;
+}
+
 export interface PredefinedEdital {
-  id: string; // UUID string
+  id: string;
   name: string;
   organization: string;
   examDate?: string;
@@ -62,15 +86,15 @@ export interface MockExam {
 
 export interface StudyCycle {
   id: string;
+  user_id?: string;
   board: string;
   examDate: string;
   hoursPerDay: number;
-  schedule: Array<{
-    day: string;
-    sessions: Array<{
-      subjectName: string;
-      duration: number;
-      focus: string;
-    }>;
-  }>;
+  schedule: any[];
+  config_disciplinas: CycleSubject[];
+  disciplinas_por_ciclo: number;
+  meta_atual: number;
+  ciclo_atual: number;
+  metas_concluidas: number;
+  materias_concluidas_ids: string[];
 }
