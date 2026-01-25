@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 import { 
   Trash2, Edit3, X, Save, Search, User as UserIcon, Loader2, 
   Plus, UserPlus, ShieldCheck, ShieldAlert, CheckCircle2, Ban,
-  FileText, Database, Calendar, Globe
+  FileText, Database, Calendar, Globe, Power, AlertTriangle, UserCheck
 } from 'lucide-react';
 
 interface AdminProps {
@@ -30,12 +30,72 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
   const [searchTerm, setSearchTerm] = useState('');
   const [loadingId, setLoadingId] = useState<string | null>(null);
   
+  // States para Edição de Usuários
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editUserName, setEditUserName] = useState('');
+  const [editUserRole, setEditUserRole] = useState<'administrator' | 'student' | 'visitor'>('student');
+  const [editUserStatus, setEditUserStatus] = useState<'active' | 'blocked' | 'suspended'>('active');
+
   // States para Editais
   const [isEditalModalOpen, setIsEditalModalOpen] = useState(false);
   const [editingEdital, setEditingEdital] = useState<PredefinedEdital | null>(null);
   const [editalName, setEditalName] = useState('');
   const [editalOrg, setEditalOrg] = useState('');
   const [editalDate, setEditalDate] = useState('');
+
+  // Lógica de Usuários
+  const handleSaveUser = async () => {
+    if (!editingUser || !supabase) return;
+    setLoadingId(editingUser.id);
+    
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ 
+          name: editUserName, 
+          role: editUserRole,
+          status: editUserStatus 
+        })
+        .eq('id', editingUser.id);
+
+      if (error) throw error;
+
+      setUsers(prev => prev.map(u => u.id === editingUser.id ? { 
+        ...u, 
+        name: editUserName, 
+        role: editUserRole, 
+        status: editUserStatus as any 
+      } : u));
+      
+      setIsUserModalOpen(false);
+    } catch (e) {
+      alert("Falha na atualização do operador.");
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
+  const handleDeleteUser = async (targetUser: User) => {
+    if (targetUser.id === user.id) {
+      alert("Protocolo de Segurança: Não é permitido excluir a própria conta administrativa.");
+      return;
+    }
+
+    if (!window.confirm(`AVISO: Deseja revogar permanentemente o acesso de ${targetUser.name}?`) || !supabase) return;
+    
+    setLoadingId(targetUser.id);
+    try {
+      // Nota: Em uma app real, você precisaria de uma Edge Function ou Admin API para deletar do Auth.
+      // Aqui deletamos o perfil para remover da governança.
+      await supabase.from('profiles').delete().eq('id', targetUser.id);
+      setUsers(prev => prev.filter(u => u.id !== targetUser.id));
+    } catch (e) {
+      alert("Erro ao revogar acesso.");
+    } finally {
+      setLoadingId(null);
+    }
+  };
 
   // Sincronização de Editais
   const handleSaveEdital = async () => {
@@ -80,6 +140,19 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
       alert("Erro ao deletar.");
     } finally {
       setLoadingId(null);
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'active':
+        return <span className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 px-3 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest flex items-center gap-2"><CheckCircle2 size={10}/> ATIVO</span>;
+      case 'suspended':
+        return <span className="bg-amber-500/10 border border-amber-500/20 text-amber-500 px-3 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest flex items-center gap-2"><AlertTriangle size={10}/> SUSPENSO</span>;
+      case 'blocked':
+        return <span className="bg-rose-500/10 border border-rose-500/20 text-rose-500 px-3 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest flex items-center gap-2"><Ban size={10}/> BLOQUEADO</span>;
+      default:
+        return <span className="bg-slate-500/10 border border-slate-500/20 text-slate-500 px-3 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest">INDEFINIDO</span>;
     }
   };
 
@@ -159,7 +232,6 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
     );
   }
 
-  // Render original User Management if view === 'users'
   const filteredUsers = useMemo(() => users.filter(u => u.name?.toLowerCase().includes(searchTerm.toLowerCase()) || u.email?.toLowerCase().includes(searchTerm.toLowerCase())), [users, searchTerm]);
 
   return (
@@ -183,6 +255,8 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
             <tr>
               <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-widest">OPERADOR</th>
               <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-widest">NÍVEL</th>
+              <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-widest">SITUAÇÃO</th>
+              <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-widest">CONECTIVIDADE</th>
               <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-widest text-right">AÇÕES</th>
             </tr>
           </thead>
@@ -194,7 +268,7 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
                     <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center font-black">{u.name?.charAt(0)}</div>
                     <div>
                       <p className="text-sm font-black text-white uppercase tracking-tight">{u.name}</p>
-                      <p className="text-[9px] text-slate-600 font-bold mt-1">{u.email}</p>
+                      <p className="text-[9px] text-slate-600 font-bold mt-1 lowercase">{u.email}</p>
                     </div>
                   </div>
                 </td>
@@ -203,10 +277,38 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
                     {u.role}
                   </span>
                 </td>
+                <td className="px-10 py-6">
+                  {getStatusBadge(u.status)}
+                </td>
+                <td className="px-10 py-6">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${u.isOnline ? 'bg-indigo-500 pulse-ring' : 'bg-slate-700'}`} />
+                    <span className={`text-[9px] font-black uppercase tracking-widest ${u.isOnline ? 'text-indigo-400' : 'text-slate-600'}`}>
+                      {u.isOnline ? 'Online' : 'Offline'}
+                    </span>
+                  </div>
+                </td>
                 <td className="px-10 py-6 text-right">
                   <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
-                    <button className="p-3 bg-white/5 border border-white/5 text-slate-400 hover:text-indigo-400 rounded-xl"><Edit3 size={14}/></button>
-                    <button className="p-3 bg-white/5 border border-white/5 text-slate-400 hover:text-rose-500 rounded-xl"><Trash2 size={14}/></button>
+                    <button 
+                      onClick={() => {
+                        setEditingUser(u);
+                        setEditUserName(u.name);
+                        setEditUserRole(u.role as any);
+                        setEditUserStatus(u.status as any);
+                        setIsUserModalOpen(true);
+                      }}
+                      className="p-3 bg-white/5 border border-white/5 text-slate-400 hover:text-indigo-400 rounded-xl transition-all"
+                    >
+                      <Edit3 size={14}/>
+                    </button>
+                    <button 
+                      onClick={() => handleDeleteUser(u)}
+                      disabled={loadingId === u.id}
+                      className="p-3 bg-white/5 border border-white/5 text-slate-400 hover:text-rose-500 rounded-xl transition-all"
+                    >
+                      {loadingId === u.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14}/>}
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -214,6 +316,66 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
           </tbody>
         </table>
       </div>
+
+      {isUserModalOpen && editingUser && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-slate-950/90 backdrop-blur-xl animate-in fade-in">
+          <div className="glass-card w-full max-w-md rounded-[3rem] p-12 border border-white/10 shadow-2xl relative">
+            <div className="flex justify-between items-center mb-10">
+              <div>
+                <h3 className="text-2xl font-black text-white uppercase tracking-tighter">EDITAR OPERADOR</h3>
+                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-1">ID: {editingUser.id.substring(0,8)}</p>
+              </div>
+              <button onClick={() => setIsUserModalOpen(false)} className="p-2 text-slate-500 hover:text-white transition-colors"><X size={32}/></button>
+            </div>
+            
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">NOME DE EXIBIÇÃO</label>
+                <input 
+                  value={editUserName} 
+                  onChange={e=>setEditUserName(e.target.value)} 
+                  className="w-full px-6 py-4 bg-black/40 border border-white/5 rounded-2xl text-white text-xs outline-none focus:border-indigo-500 transition-all"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">NÍVEL DE ACESSO</label>
+                <select 
+                  value={editUserRole} 
+                  onChange={e=>setEditUserRole(e.target.value as any)}
+                  className="w-full px-6 py-4 bg-black/40 border border-white/5 rounded-2xl text-white text-xs outline-none focus:border-indigo-500 transition-all uppercase font-black"
+                >
+                  <option value="student">STUDENT (OPERADOR)</option>
+                  <option value="administrator">ADMINISTRATOR (CORE)</option>
+                  <option value="visitor">VISITOR (RESTRICT)</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">SITUAÇÃO DO TERMINAL</label>
+                <select 
+                  value={editUserStatus} 
+                  onChange={e=>setEditUserStatus(e.target.value as any)}
+                  className="w-full px-6 py-4 bg-black/40 border border-white/5 rounded-2xl text-white text-xs outline-none focus:border-indigo-500 transition-all uppercase font-black"
+                >
+                  <option value="active">ACTIVE (LIBERADO)</option>
+                  <option value="suspended">SUSPENDED (AVISO)</option>
+                  <option value="blocked">BLOCKED (REVOGADO)</option>
+                </select>
+              </div>
+
+              <button 
+                onClick={handleSaveUser} 
+                disabled={loadingId === editingUser.id}
+                className="w-full bg-indigo-600 text-white p-5 rounded-2xl font-black text-[11px] uppercase tracking-widest hover:bg-indigo-500 transition-all flex justify-center items-center gap-3 mt-6 shadow-xl shadow-indigo-500/20"
+              >
+                {loadingId === editingUser.id ? <Loader2 className="animate-spin" size={20} /> : <UserCheck size={20}/>}
+                CONFIRMAR ATUALIZAÇÃO
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

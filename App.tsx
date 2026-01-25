@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   LayoutDashboard, BookOpen, RefreshCcw, BarChart2, LogOut, Menu,
-  BrainCircuit, Users, Settings, Loader2, Lock, ShieldCheck
+  BrainCircuit, Users, Settings, Loader2, Lock, ShieldCheck, Calendar
 } from 'lucide-react';
 import { User, Subject, MockExam, StudyCycle, StudySession, PredefinedEdital } from './types';
 import { supabase } from './lib/supabase';
@@ -44,13 +44,13 @@ const App: React.FC = () => {
     if (!supabase || loggingOutRef.current) return;
     
     try {
-      // ISOLAMENTO ESTRITO: Cada usuário vê apenas o que possui seu user_id
-      const [subRes, logRes, mockRes, cycleRes, editalRes] = await Promise.all([
+      const [subRes, logRes, mockRes, cycleRes, editalRes, profileRes] = await Promise.all([
         supabase.from('subjects').select('*').eq('user_id', userId),
         supabase.from('study_logs').select('*').eq('user_id', userId).order('date', { ascending: false }),
         supabase.from('mocks').select('*').eq('user_id', userId).order('date', { ascending: false }),
         supabase.from('study_cycles').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(1),
-        supabase.from('predefined_editais').select('*')
+        supabase.from('predefined_editais').select('*'),
+        supabase.from('profiles').select('exam_date, weekly_goal').eq('id', userId).single()
       ]);
 
       if (subRes.data) {
@@ -76,7 +76,14 @@ const App: React.FC = () => {
       if (cycleRes.data?.[0]) setCycle({ ...cycleRes.data[0], id: String(cycleRes.data[0].id) });
       if (editalRes.data) setEditais(editalRes.data.map(e => ({ ...e, id: String(e.id), examDate: e.exam_date, lastUpdated: e.last_updated })));
 
-      // Governança: Apenas admins listam usuários (mas não seus dados de estudo)
+      if (profileRes.data) {
+        setUser(prev => prev ? { 
+          ...prev, 
+          examDate: profileRes.data.exam_date, 
+          weeklyGoal: profileRes.data.weekly_goal 
+        } : null);
+      }
+
       if (role === 'administrator') {
         const { data: profiles } = await supabase.from('profiles').select('*');
         if (profiles) setAllUsers(profiles.map(p => ({ ...p, id: String(p.id), name: p.name || 'Usuário', lastAccess: p.last_seen })));
@@ -102,7 +109,9 @@ const App: React.FC = () => {
           email: session.user.email || '',
           role: role as any,
           status: 'active',
-          isOnline: true
+          isOnline: true,
+          examDate: profile?.exam_date,
+          weeklyGoal: profile?.weekly_goal
         };
         setUser(u);
         fetchData(u.id, u.role);
@@ -111,6 +120,13 @@ const App: React.FC = () => {
     };
     init();
   }, [fetchData]);
+
+  const handleUpdateExamDate = async (date: string) => {
+    if (user && supabase) {
+      setUser({ ...user, examDate: date });
+      await supabase.from('profiles').update({ exam_date: date }).eq('id', user.id);
+    }
+  };
 
   const handleLogout = async () => {
     loggingOutRef.current = true;
@@ -136,6 +152,12 @@ const App: React.FC = () => {
   }
 
   if (!user) return <Login users={allUsers} onLogin={(u) => { setUser(u); fetchData(u.id, u.role); }} onRegister={(u) => { setUser(u); fetchData(u.id, u.role); }} />;
+
+  const currentDateFormatted = new Date().toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-950 text-slate-200">
@@ -182,15 +204,22 @@ const App: React.FC = () => {
               <button className="lg:hidden p-2 text-indigo-400" onClick={() => setIsSidebarOpen(true)}><Menu size={20}/></button>
               <h2 className="text-[9px] font-black uppercase tracking-[0.5em] text-slate-500">TERMINAL / <span className="text-white">{currentPage}</span></h2>
            </div>
-           <div className="flex items-center gap-2 px-3 py-1 bg-slate-900 rounded-full border border-white/5">
-             <Lock size={12} className="text-slate-500" />
-             <span className="text-[8px] font-black text-slate-500 uppercase">Acesso Privado Ativo</span>
+           
+           <div className="flex items-center gap-3">
+             <div className="hidden md:flex items-center gap-2 px-3 py-1 bg-slate-900/50 rounded-full border border-white/5">
+                <Calendar size={12} className="text-indigo-400" />
+                <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest">{currentDateFormatted}</span>
+             </div>
+             <div className="flex items-center gap-2 px-3 py-1 bg-slate-900 rounded-full border border-white/5 shadow-inner">
+               <Lock size={12} className="text-indigo-500" />
+               <span className="text-[8px] font-black text-slate-500 uppercase tracking-tighter">Acesso Privado Ativo</span>
+             </div>
            </div>
         </header>
         <div className="flex-1 overflow-y-auto custom-scrollbar p-10">
           <div className="max-w-7xl mx-auto">
-            {currentPage === 'inicio' && <Dashboard subjects={subjects || []} mocks={mocks} cycle={cycle} studyLogs={bottomStudyLogs} weeklyGoal={user.weeklyGoal || 20} onUpdateGoal={()=>{}} isDarkMode={true} />}
-            {currentPage === 'disciplinas' && <Disciplinas user={user} subjects={subjects || []} setSubjects={setSubjects as any} predefinedEditais={editais} onAddLog={handleAddLogLocally} />}
+            {currentPage === 'inicio' && <Dashboard subjects={subjects || []} mocks={mocks} cycle={cycle} studyLogs={bottomStudyLogs} weeklyGoal={user.weeklyGoal || 20} examDate={user.examDate} onUpdateGoal={()=>{}} isDarkMode={true} />}
+            {currentPage === 'disciplinas' && <Disciplinas user={user} subjects={subjects || []} setSubjects={setSubjects as any} predefinedEditais={editais} onAddLog={handleAddLogLocally} onUpdateExamDate={handleUpdateExamDate} />}
             {currentPage === 'revisao' && <Revisao user={user} subjects={subjects || []} setSubjects={setSubjects as any} onAddLog={handleAddLogLocally} />}
             {currentPage === 'ciclos' && <Ciclos user={user} subjects={subjects || []} cycle={cycle} setCycle={setCycle} />}
             {currentPage === 'simulados' && <Simulados user={user} mocks={mocks} setMocks={setMocks} subjects={subjects || []} />}

@@ -9,6 +9,7 @@ export interface User {
   isOnline: boolean;
   lastAccess?: string;
   weeklyGoal?: number;
+  examDate?: string;
 }
 
 export interface StudySession {

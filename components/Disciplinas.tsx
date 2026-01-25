@@ -3,7 +3,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Subject, Topic, PredefinedEdital, User, StudySession } from '../types';
 import { supabase } from '../lib/supabase';
 import { 
-  Plus, Trash2, ChevronDown, ChevronUp, CheckCircle, Clock, Calendar, X, DownloadCloud, Target, Activity, Edit3, Check, RotateCcw, Loader2, Save, ShieldCheck, Zap, BarChart, Hash, AlertTriangle
+  Plus, Trash2, ChevronDown, ChevronUp, CheckCircle, Clock, Calendar, X, DownloadCloud, Target, Activity, Edit3, Check, RotateCcw, Loader2, Save, ShieldCheck, Zap, BarChart, Hash, AlertTriangle, Timer
 } from 'lucide-react';
 
 interface DisciplinasProps {
@@ -12,9 +12,10 @@ interface DisciplinasProps {
   setSubjects: React.Dispatch<React.SetStateAction<Subject[]>>;
   predefinedEditais: PredefinedEdital[];
   onAddLog: (log: StudySession) => void;
+  onUpdateExamDate: (date: string) => void;
 }
 
-export default function Disciplinas({ user, subjects, setSubjects, predefinedEditais, onAddLog }: DisciplinasProps) {
+export default function Disciplinas({ user, subjects, setSubjects, predefinedEditais, onAddLog, onUpdateExamDate }: DisciplinasProps) {
   const [newSubjectName, setNewSubjectName] = useState('');
   const [expandedSubject, setExpandedSubject] = useState<string | null>(null);
   const [newTopicTitle, setNewTopicTitle] = useState('');
@@ -163,7 +164,21 @@ export default function Disciplinas({ user, subjects, setSubjects, predefinedEdi
           <h2 className="text-4xl font-black text-white tracking-tighter uppercase">QUESTS ATIVAS</h2>
           <p className="text-slate-500 font-bold mt-2 text-[10px] uppercase tracking-[0.4em]">Propriedade de: <span className="text-white">{user.email}</span></p>
         </div>
-        <div className="flex gap-4">
+        <div className="flex flex-wrap gap-4 items-end">
+          {/* REGISTRO DATA DA PROVA */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[8px] font-black text-indigo-400 uppercase tracking-widest ml-1">META: DATA DA PROVA</label>
+            <div className="flex items-center gap-2 bg-black/40 border border-white/10 rounded-xl px-4 py-3 group focus-within:border-indigo-500 transition-all">
+              <Calendar size={14} className="text-indigo-500" />
+              <input 
+                type="date" 
+                className="bg-transparent text-white font-black text-[10px] uppercase outline-none"
+                value={user.examDate || ''}
+                onChange={(e) => onUpdateExamDate(e.target.value)}
+              />
+            </div>
+          </div>
+
           <button onClick={() => setShowCatalog(!showCatalog)} className={`flex items-center gap-2 px-6 py-4 rounded-xl font-black text-[10px] uppercase tracking-widest border transition-all ${showCatalog ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'}`}>
             {showCatalog ? <X size={16} /> : <DownloadCloud size={16} />} CATÁLOGO
           </button>
@@ -183,6 +198,9 @@ export default function Disciplinas({ user, subjects, setSubjects, predefinedEdi
                 <h4 className="font-black text-white mb-2 uppercase tracking-tight">{edital.name}</h4>
                 <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-6">{edital.organization}</p>
                 <button onClick={async () => {
+                   // Ao importar, se o edital tiver data, atualiza a data da prova do usuário
+                   if (edital.examDate) onUpdateExamDate(edital.examDate);
+
                    const cloned: Subject[] = edital.subjects.map((sub, idx) => ({ ...sub, id: `local-import-${Date.now()}-${idx}`, topics: sub.topics.map(t => ({ ...t, id: `topic-${Math.random().toString(36).substr(2, 9)}`, completed: false, studyTimeMinutes: 0, questionsAttempted: 0, questionsCorrect: 0 })) }));
                    for (const s of cloned) {
                       if (supabase && user.role !== 'visitor') {
