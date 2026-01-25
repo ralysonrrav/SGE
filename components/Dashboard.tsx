@@ -5,9 +5,9 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
 import { 
-  TrendingUp, Clock, Target, Zap, ArrowUpRight, BarChart2, 
-  Flag, Trophy, ChevronRight, User as UserIcon, Flame, Timer, Calendar, Quote,
-  Edit2, Check, Loader2
+  TrendingUp, Clock, Target, ArrowUpRight, BarChart2, 
+  Flag, Trophy, User as UserIcon, Flame, Timer, Quote,
+  Edit2, Check, Loader2, Hash, Activity
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -39,7 +39,6 @@ const Dashboard: React.FC<DashboardProps> = ({ subjects, mocks, studyLogs, weekl
   const [isMounted, setIsMounted] = useState(false);
   const [now, setNow] = useState(new Date());
   
-  // States para edição local rápida
   const [isEditingGoal, setIsEditingGoal] = useState(false);
   const [localGoal, setLocalGoal] = useState(weeklyGoal);
   const [isEditingDate, setIsEditingDate] = useState(false);
@@ -52,26 +51,58 @@ const Dashboard: React.FC<DashboardProps> = ({ subjects, mocks, studyLogs, weekl
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    setLocalGoal(weeklyGoal);
-  }, [weeklyGoal]);
+  useEffect(() => { setLocalGoal(weeklyGoal); }, [weeklyGoal]);
+  useEffect(() => { setLocalDate(examDate || ''); }, [examDate]);
 
-  useEffect(() => {
-    setLocalDate(examDate || '');
-  }, [examDate]);
+  // Estatísticas Globais de Questões (Tópicos + Simulados)
+  const globalQuestions = useMemo(() => {
+    let attempted = 0;
+    let correct = 0;
 
-  const totalMinutes = useMemo(() => subjects.reduce((acc, s) => acc + s.topics.reduce((tAcc, t) => tAcc + (t.studyTimeMinutes || 0), 0), 0), [subjects]);
-  const totalHours = Math.floor(totalMinutes / 60);
+    subjects.forEach(s => {
+      s.topics.forEach(t => {
+        attempted += (t.questionsAttempted || 0);
+        correct += (t.questionsCorrect || 0);
+      });
+    });
+
+    mocks.forEach(m => {
+      attempted += (m.totalQuestions || 0);
+      correct += (m.score || 0);
+    });
+
+    const percent = attempted > 0 ? Math.round((correct / attempted) * 100) : 0;
+    return { attempted, correct, percent };
+  }, [subjects, mocks]);
+
+  const totalStudyMinutes = useMemo(() => studyLogs.reduce((acc, log) => acc + (log.minutes || 0), 0), [studyLogs]);
+  const totalStudyHours = Math.floor(totalStudyMinutes / 60);
+  const remainingStudyMinutes = totalStudyMinutes % 60;
+
   const totalTopics = useMemo(() => subjects.reduce((acc, s) => acc + s.topics.length, 0), [subjects]);
   const completedTopics = useMemo(() => subjects.reduce((acc, s) => acc + s.topics.filter(t => t.completed).length, 0), [subjects]);
   const progressPercent = totalTopics > 0 ? Math.round((completedTopics / totalTopics) * 100) : 0;
 
+  // Lógica de Meta Semanal (Reinicia na virada de Domingo para Segunda)
   const thisWeekHours = useMemo(() => {
     const today = new Date();
-    const lastSun = new Date(today);
-    lastSun.setDate(today.getDate() - today.getDay());
-    lastSun.setHours(0, 0, 0, 0);
-    const mins = studyLogs.reduce((acc, log) => new Date(log.date) >= lastSun ? acc + log.minutes : acc, 0);
+    const dayOfWeek = today.getDay(); // 0 = Domingo, 1 = Segunda...
+    
+    // Cálculo para encontrar a última segunda-feira
+    // Se hoje for Domingo (0), subtraímos 6 dias. 
+    // Se hoje for Segunda (1), subtraímos 0 dias.
+    // Se hoje for Terça (2), subtraímos 1 dia...
+    const diffToMonday = (dayOfWeek === 0 ? 6 : dayOfWeek - 1);
+    
+    const startOfStudyWeek = new Date(today);
+    startOfStudyWeek.setDate(today.getDate() - diffToMonday);
+    startOfStudyWeek.setHours(0, 0, 0, 0); // Início absoluto da Segunda-feira
+
+    const mins = studyLogs.reduce((acc, log) => {
+      const logDate = new Date(log.date);
+      return logDate >= startOfStudyWeek ? acc + log.minutes : acc;
+    }, 0);
+    
     return parseFloat((mins / 60).toFixed(1));
   }, [studyLogs]);
 
@@ -81,14 +112,12 @@ const Dashboard: React.FC<DashboardProps> = ({ subjects, mocks, studyLogs, weekl
   const dailyPhrase = useMemo(() => {
     const start = new Date(now.getFullYear(), 0, 0);
     const diff = now.getTime() - start.getTime();
-    const oneDay = 1000 * 60 * 60 * 24;
-    const dayOfYear = Math.floor(diff / oneDay);
+    const dayOfYear = Math.floor(diff / (1000 * 60 * 60 * 24));
     return MOTIVATIONAL_PHRASES[dayOfYear % MOTIVATIONAL_PHRASES.length];
   }, [now]);
 
   const countdown = useMemo(() => {
     if (!examDate) return null;
-    // Forçar interpretação local da data para evitar fuso horário
     const [year, month, day] = examDate.split('-').map(Number);
     const target = new Date(year, month - 1, day, 12, 0, 0);
     const diff = target.getTime() - now.getTime();
@@ -141,36 +170,23 @@ const Dashboard: React.FC<DashboardProps> = ({ subjects, mocks, studyLogs, weekl
 
           <div className="relative h-20 flex items-center px-4">
              <div className="absolute left-10 right-10 h-1.5 bg-slate-900 rounded-full shadow-inner"></div>
-             <div 
-               className="absolute left-10 h-1.5 bg-gradient-to-r from-indigo-600 to-indigo-400 rounded-full transition-all duration-[2000ms] ease-out shadow-[0_0_15px_rgba(99,102,241,0.6)]"
-               style={{ width: `calc(${progressPercent}% - 0px)` }}
-             ></div>
+             <div className="absolute left-10 h-1.5 bg-gradient-to-r from-indigo-600 to-indigo-400 rounded-full transition-all duration-[2000ms] ease-out shadow-[0_0_15px_rgba(99,102,241,0.6)]" style={{ width: `calc(${progressPercent}% - 0px)` }}></div>
              <div className="absolute left-0 flex flex-col items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-slate-900 border border-white/5 flex items-center justify-center text-slate-500">
-                   <Flag size={14} />
-                </div>
+                <div className="w-8 h-8 rounded-xl bg-slate-900 border border-white/5 flex items-center justify-center text-slate-500"><Flag size={14} /></div>
              </div>
-             <div 
-               className="absolute transition-all duration-[2000ms] ease-out z-20 flex flex-col items-center"
-               style={{ left: `calc(${progressPercent}% - 20px)`, marginLeft: '20px' }}
-             >
-                <div className="w-10 h-10 bg-white rounded-2xl flex items-center justify-center shadow-2xl animate-float border-2 border-indigo-400">
-                   <UserIcon className="text-indigo-600" size={20} />
-                </div>
+             <div className="absolute transition-all duration-[2000ms] ease-out z-20 flex flex-col items-center" style={{ left: `calc(${progressPercent}% - 20px)`, marginLeft: '20px' }}>
+                <div className="w-10 h-10 bg-white rounded-2xl flex items-center justify-center shadow-2xl animate-float border-2 border-indigo-400"><UserIcon className="text-indigo-600" size={20} /></div>
              </div>
              <div className="absolute right-0 flex flex-col items-center gap-2">
-                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all duration-500 ${progressPercent === 100 ? 'bg-amber-500 text-white shadow-[0_0_30px_rgba(245,158,11,0.5)] scale-110' : 'bg-slate-900 text-slate-700 border border-white/5 opacity-50'}`}>
-                   <Trophy size={20} />
-                </div>
+                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all duration-500 ${progressPercent === 100 ? 'bg-amber-500 text-white shadow-[0_0_30px_rgba(245,158,11,0.5)] scale-110' : 'bg-slate-900 text-slate-700 border border-white/5 opacity-50'}`}><Trophy size={20} /></div>
              </div>
           </div>
         </div>
       </div>
 
-      {/* GRID DE CARDS UNIFICADOS COM EDIÇÃO DIRETA */}
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
         
-        {/* CARD DATA DA PROVA - EDITÁVEL */}
+        {/* CARD DATA DA PROVA */}
         <div className={`glass-card p-8 rounded-[2rem] border-l-4 transition-all group overflow-hidden relative ${countdown?.days && countdown.days < 7 ? 'border-rose-500/40 animate-pulse' : 'border-indigo-500/20'}`}>
              <div className="flex items-center justify-between mb-6 relative z-10">
                <div className="flex items-center gap-3">
@@ -181,85 +197,70 @@ const Dashboard: React.FC<DashboardProps> = ({ subjects, mocks, studyLogs, weekl
                   {isSaving ? <Loader2 size={12} className="animate-spin" /> : isEditingDate ? <Check size={12} className="text-emerald-500" /> : <Edit2 size={12}/>}
                </button>
              </div>
-             
              {isEditingDate ? (
-               <input 
-                 type="date" 
-                 autoFocus
-                 className="w-full bg-black/40 border border-indigo-500/50 rounded-xl px-3 py-2 text-white font-black text-xs outline-none"
-                 value={localDate}
-                 onChange={(e) => setLocalDate(e.target.value)}
-                 onBlur={handleSaveDate}
-                 onKeyDown={(e) => e.key === 'Enter' && handleSaveDate()}
-               />
+               <input type="date" autoFocus className="w-full bg-black/40 border border-indigo-500/50 rounded-xl px-3 py-2 text-white font-black text-xs outline-none" value={localDate} onChange={(e) => setLocalDate(e.target.value)} onBlur={handleSaveDate} onKeyDown={(e) => e.key === 'Enter' && handleSaveDate()} />
              ) : (
                <p className={`text-3xl font-black tracking-tighter relative z-10 ${countdown?.isToday ? 'text-emerald-500' : countdown?.isPast ? 'text-rose-500' : countdown?.days && countdown.days < 7 ? 'text-rose-500' : 'text-white'}`}>
                  {countdown ? (countdown.isToday ? 'HOJE' : countdown.isPast ? 'PASSOU' : `${countdown.days}d`) : '--'}
                </p>
              )}
-             
-             {countdown?.days && countdown.days < 7 && !countdown.isPast && (
-               <div className="absolute inset-0 bg-rose-500/5 pointer-events-none"></div>
-             )}
         </div>
 
-        {/* CARD TEMPO BRUTO */}
+        {/* CARD TEMPO DE ESTUDO */}
         <div className="glass-card p-8 rounded-[2rem] border-l-4 border-indigo-500/20 hover:border-l-white transition-all group overflow-hidden relative">
              <div className="flex items-center gap-3 mb-6 relative z-10">
                <div className="p-2 rounded bg-white/5 text-indigo-400"><Clock size={16}/></div>
-               <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">Tempo Bruto</span>
+               <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">Tempo de Estudo</span>
              </div>
-             <p className="text-3xl font-black tracking-tighter text-white">{totalHours}h {totalMinutes % 60}m</p>
+             <p className="text-3xl font-black tracking-tighter text-white">{totalStudyHours}h {remainingStudyMinutes}m</p>
+             <p className="text-[8px] font-bold text-slate-600 uppercase tracking-widest mt-2">Total Histórico</p>
         </div>
 
-        {/* CARD RITMO SEMANAL */}
+        {/* CARD QUESTÕES */}
         <div className="glass-card p-8 rounded-[2rem] border-l-4 border-amber-500/20 hover:border-l-white transition-all group overflow-hidden relative">
              <div className="flex items-center gap-3 mb-6 relative z-10">
-               <div className="p-2 rounded bg-white/5 text-amber-400"><Zap size={16}/></div>
-               <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">Ritmo Semanal</span>
+               <div className="p-2 rounded bg-white/5 text-amber-400"><Hash size={16}/></div>
+               <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">Questões</span>
              </div>
-             <p className="text-3xl font-black tracking-tighter text-white">{thisWeekHours}h</p>
+             <p className="text-3xl font-black tracking-tighter text-white">{globalQuestions.attempted}</p>
+             <p className="text-[8px] font-bold text-slate-600 uppercase tracking-widest mt-2">{globalQuestions.correct} Acertos Totais</p>
         </div>
 
-        {/* CARD MÉDIA SIMULADOS */}
+        {/* CARD APROVEITAMENTO */}
         <div className="glass-card p-8 rounded-[2rem] border-l-4 border-emerald-500/20 hover:border-l-white transition-all group overflow-hidden relative">
              <div className="flex items-center gap-3 mb-6 relative z-10">
-               <div className="p-2 rounded bg-white/5 text-emerald-400"><Target size={16}/></div>
-               <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">Média Simulados</span>
+               <div className="p-2 rounded bg-white/5 text-emerald-400"><Activity size={16}/></div>
+               <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">Aproveitamento</span>
              </div>
-             <p className="text-3xl font-black tracking-tighter text-white">
-               {mocks.length > 0 ? `${Math.round(mocks.reduce((acc, m) => acc + (m.score / m.totalQuestions), 0) / mocks.length * 100)}%` : '0%'}
+             <p className={`text-3xl font-black tracking-tighter ${globalQuestions.percent >= 80 ? 'text-emerald-500' : globalQuestions.percent >= 60 ? 'text-amber-500' : 'text-rose-500'}`}>
+               {globalQuestions.percent}%
              </p>
+             <p className="text-[8px] font-bold text-slate-600 uppercase tracking-widest mt-2">Média Global de Assertividade</p>
         </div>
 
-        {/* CARD META BATIDA - EDITÁVEL */}
+        {/* CARD META SEMANAL - REINICIA NA SEGUNDA */}
         <div className="glass-card p-8 rounded-[2rem] border-l-4 border-sky-500/20 hover:border-l-white transition-all group overflow-hidden relative">
              <div className="flex items-center justify-between mb-6 relative z-10">
                <div className="flex items-center gap-3">
                   <div className="p-2 rounded bg-white/5 text-sky-400"><TrendingUp size={16}/></div>
-                  <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">Meta: {weeklyGoal}h</span>
+                  <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">Meta Semanal: {weeklyGoal}h</span>
                </div>
                <button onClick={() => isEditingGoal ? handleSaveGoal() : setIsEditingGoal(true)} className="p-1.5 text-slate-700 hover:text-white transition-colors bg-white/5 rounded-lg">
                   {isSaving ? <Loader2 size={12} className="animate-spin" /> : isEditingGoal ? <Check size={12} className="text-emerald-500" /> : <Edit2 size={12}/>}
                </button>
              </div>
-             
              {isEditingGoal ? (
-               <input 
-                 type="number" 
-                 autoFocus
-                 className="w-full bg-black/40 border border-sky-500/50 rounded-xl px-3 py-2 text-white font-black text-xs outline-none"
-                 value={localGoal}
-                 onChange={(e) => setLocalGoal(parseInt(e.target.value) || 0)}
-                 onBlur={handleSaveGoal}
-                 onKeyDown={(e) => e.key === 'Enter' && handleSaveGoal()}
-               />
+               <input type="number" autoFocus className="w-full bg-black/40 border border-sky-500/50 rounded-xl px-3 py-2 text-white font-black text-xs outline-none" value={localGoal} onChange={(e) => setLocalGoal(parseInt(e.target.value) || 0)} onBlur={handleSaveGoal} onKeyDown={(e) => e.key === 'Enter' && handleSaveGoal()} />
              ) : (
-               <p className="text-3xl font-black tracking-tighter text-white">{weeklyGoalPercent}%</p>
+               <div className="flex items-end gap-3">
+                 <p className="text-3xl font-black tracking-tighter text-white">{weeklyGoalPercent}%</p>
+                 <span className="text-[10px] font-bold text-slate-500 mb-1">({thisWeekHours}h de Seg-Dom)</span>
+               </div>
              )}
         </div>
       </div>
 
+      {/* ANÁLISE TÁTICA */}
       <div className="glass-card rounded-[2.5rem] p-10 shadow-2xl">
           <div className="flex items-center justify-between mb-12">
             <div>
