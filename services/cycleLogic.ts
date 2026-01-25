@@ -30,9 +30,12 @@ export const gerarCiclos = (subjects: CycleSubject[], perCycle: number): Ciclo[]
     for (let j = 0; j < perCycle; j++) {
       const index = ( (i - 1) * 2 + j ) % subjects.length;
       const sub = subjects[index];
+      
+      // REMOVIDO Date.now() para garantir que o ID seja o mesmo entre recarregamentos
+      // O ID agora depende da matéria, da fase e da posição no ciclo.
       selected.push({
         ...sub,
-        instanceId: `${sub.id}-c${i}-${j}-${Date.now()}`
+        instanceId: `${sub.id}-fase${i}-idx${j}`
       });
     }
 
