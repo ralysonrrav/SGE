@@ -6,7 +6,8 @@ import {
 } from 'recharts';
 import { 
   TrendingUp, Clock, Target, Zap, ArrowUpRight, BarChart2, 
-  Flag, Trophy, ChevronRight, User as UserIcon, Flame, Timer, Calendar, Quote
+  Flag, Trophy, ChevronRight, User as UserIcon, Flame, Timer, Calendar, Quote,
+  Edit2, Check
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -17,6 +18,7 @@ interface DashboardProps {
   weeklyGoal: number;
   examDate?: string;
   onUpdateGoal: (hours: number) => void;
+  onUpdateExamDate: (date: string) => void;
   isDarkMode: boolean;
 }
 
@@ -33,15 +35,29 @@ const MOTIVATIONAL_PHRASES = [
   { text: "A jornada de mil milhas começa com um único passo.", author: "Lao Tzu" }
 ];
 
-const Dashboard: React.FC<DashboardProps> = ({ subjects, mocks, studyLogs, weeklyGoal, examDate, onUpdateGoal }) => {
+const Dashboard: React.FC<DashboardProps> = ({ subjects, mocks, studyLogs, weeklyGoal, examDate, onUpdateGoal, onUpdateExamDate }) => {
   const [isMounted, setIsMounted] = useState(false);
   const [now, setNow] = useState(new Date());
+  
+  // States para edição local rápida
+  const [isEditingGoal, setIsEditingGoal] = useState(false);
+  const [localGoal, setLocalGoal] = useState(weeklyGoal);
+  const [isEditingDate, setIsEditingDate] = useState(false);
+  const [localDate, setLocalDate] = useState(examDate || '');
 
   useEffect(() => { 
     setIsMounted(true); 
     const timer = setInterval(() => setNow(new Date()), 60000); 
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    setLocalGoal(weeklyGoal);
+  }, [weeklyGoal]);
+
+  useEffect(() => {
+    setLocalDate(examDate || '');
+  }, [examDate]);
 
   const totalMinutes = useMemo(() => subjects.reduce((acc, s) => acc + s.topics.reduce((tAcc, t) => tAcc + (t.studyTimeMinutes || 0), 0), 0), [subjects]);
   const totalHours = Math.floor(totalMinutes / 60);
@@ -61,7 +77,6 @@ const Dashboard: React.FC<DashboardProps> = ({ subjects, mocks, studyLogs, weekl
   const weeklyGoalPercent = Math.min(100, Math.round((thisWeekHours / weeklyGoal) * 100));
   const mockData = useMemo(() => mocks.map(m => ({ name: m.title.substring(0, 8), acerto: Math.round((m.score / m.totalQuestions) * 100) })).slice(-5).reverse(), [mocks]);
 
-  // LOGICA PARA ESCOLHER FRASE DIÁRIA
   const dailyPhrase = useMemo(() => {
     const start = new Date(now.getFullYear(), 0, 0);
     const diff = now.getTime() - start.getTime();
@@ -70,48 +85,13 @@ const Dashboard: React.FC<DashboardProps> = ({ subjects, mocks, studyLogs, weekl
     return MOTIVATIONAL_PHRASES[dayOfYear % MOTIVATIONAL_PHRASES.length];
   }, [now]);
 
-  // LÓGICA DE CONTAGEM REGRESSIVA COM CORREÇÃO DE TIMEZONE
   const countdown = useMemo(() => {
     if (!examDate) return null;
     const target = new Date(`${examDate}T12:00:00`);
     const diff = target.getTime() - now.getTime();
-    
-    if (diff <= 0) return { days: 0, hours: 0, minutes: 0, isPast: true };
-    
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    return { days, isPast: false };
+    if (diff <= 0) return { days: 0, isPast: true };
+    return { days: Math.floor(diff / (1000 * 60 * 60 * 24)), isPast: false };
   }, [examDate, now]);
-
-  const statsCards = useMemo(() => {
-    const baseStats = [
-      { label: 'Tempo Bruto', value: `${totalHours}h ${totalMinutes % 60}m`, icon: <Clock size={16}/>, color: 'text-indigo-400', borderColor: 'border-indigo-500/20' },
-      { label: 'Ritmo Semanal', value: `${thisWeekHours}h`, icon: <Zap size={16}/>, color: 'text-amber-400', borderColor: 'border-amber-500/20' },
-      { label: 'Média Simulados', value: mocks.length > 0 ? `${Math.round(mocks[0].score / mocks[0].totalQuestions * 100)}%` : '0%', icon: <Target size={16}/>, color: 'text-emerald-400', borderColor: 'border-emerald-500/20' },
-      { label: 'Meta Batida', value: `${weeklyGoalPercent}%`, icon: <TrendingUp size={16}/>, color: 'text-sky-400', borderColor: 'border-sky-500/20' },
-    ];
-
-    if (countdown) {
-      const countdownStyle = countdown.days < 7 ? 'text-rose-500' : countdown.days < 30 ? 'text-amber-500' : 'text-indigo-400';
-      const borderStyle = countdown.days < 7 ? 'border-rose-500/40' : countdown.days < 30 ? 'border-amber-500/30' : 'border-indigo-500/20';
-      
-      return [
-        { 
-          label: 'Dias p/ Prova', 
-          value: countdown.isPast ? 'HOJE' : `${countdown.days}d`, 
-          icon: <Timer size={16}/>, 
-          color: countdownStyle, 
-          borderColor: borderStyle,
-          isUrgent: countdown.days < 7 && !countdown.isPast
-        },
-        ...baseStats
-      ];
-    }
-
-    return [
-      { label: 'Data da Prova', value: '--', icon: <Calendar size={16}/>, color: 'text-slate-600', borderColor: 'border-white/5' },
-      ...baseStats
-    ];
-  }, [totalHours, totalMinutes, thisWeekHours, mocks, weeklyGoalPercent, countdown]);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
@@ -127,14 +107,14 @@ const Dashboard: React.FC<DashboardProps> = ({ subjects, mocks, studyLogs, weekl
            </div>
         </div>
 
-        {/* TRILHA DA NOMEAÇÃO (Largura Total) */}
-        <div className="glass-card rounded-[2.5rem] p-10 relative overflow-hidden border-b-4 border-indigo-500/30">
+        {/* TRILHA DA NOMEAÇÃO */}
+        <div className="glass-card rounded-[2.5rem] p-10 relative overflow-hidden border-b-4 border-indigo-500/30 shadow-2xl">
           <div className="flex justify-between items-end mb-12">
              <div>
                 <h3 className="text-2xl font-black text-white tracking-tighter flex items-center gap-3">
                    <Flame className="text-orange-500 animate-pulse" /> TRILHA DA NOMEAÇÃO
                 </h3>
-                <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] mt-1">Status da Jornada: <span className="text-indigo-400">{progressPercent}% do Edital</span></p>
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] mt-1">Status da Jornada: <span className="text-indigo-400">{progressPercent}% do Edital Vertical</span></p>
              </div>
              <div className="text-right">
                 <span className="text-4xl font-black text-white text-glow">{progressPercent}%</span>
@@ -169,34 +149,104 @@ const Dashboard: React.FC<DashboardProps> = ({ subjects, mocks, studyLogs, weekl
         </div>
       </div>
 
-      {/* GRID DE CARDS UNIFICADOS */}
+      {/* GRID DE CARDS UNIFICADOS COM EDIÇÃO DIRETA */}
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
-        {statsCards.map((stat, i) => (
-          <div key={i} className={`glass-card p-8 rounded-[2rem] border-l-4 ${stat.borderColor} hover:border-l-white transition-all group overflow-hidden relative ${(stat as any).isUrgent ? 'animate-pulse' : ''}`}>
-             <div className="flex items-center gap-3 mb-6 relative z-10">
-               <div className={`p-2 rounded bg-white/5 ${stat.color}`}>{stat.icon}</div>
-               <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">{stat.label}</span>
+        
+        {/* CARD DATA DA PROVA - EDITÁVEL */}
+        <div className={`glass-card p-8 rounded-[2rem] border-l-4 transition-all group overflow-hidden relative ${countdown?.days && countdown.days < 7 ? 'border-rose-500/40 animate-pulse' : 'border-indigo-500/20'}`}>
+             <div className="flex items-center justify-between mb-6 relative z-10">
+               <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded bg-white/5 ${countdown?.days && countdown.days < 7 ? 'text-rose-500' : 'text-indigo-400'}`}><Timer size={16}/></div>
+                  <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">Dias p/ Prova</span>
+               </div>
+               <button onClick={() => setIsEditingDate(!isEditingDate)} className="p-1.5 text-slate-700 hover:text-white transition-colors bg-white/5 rounded-lg">
+                  {isEditingDate ? <Check size={12} className="text-emerald-500" /> : <Edit2 size={12}/>}
+               </button>
              </div>
-             <p className={`text-3xl font-black tracking-tighter relative z-10 ${stat.color === 'text-slate-600' ? 'text-slate-600' : 'text-white'}`}>{stat.value}</p>
              
-             {/* Efeito visual de fundo para cards urgentes */}
-             {(stat as any).isUrgent && (
+             {isEditingDate ? (
+               <input 
+                 type="date" 
+                 autoFocus
+                 className="w-full bg-black/40 border border-indigo-500/50 rounded-xl px-3 py-2 text-white font-black text-xs outline-none"
+                 value={localDate}
+                 onChange={(e) => setLocalDate(e.target.value)}
+                 onBlur={() => { onUpdateExamDate(localDate); setIsEditingDate(false); }}
+               />
+             ) : (
+               <p className={`text-3xl font-black tracking-tighter relative z-10 ${countdown?.isPast ? 'text-rose-500' : countdown?.days && countdown.days < 7 ? 'text-rose-500' : 'text-white'}`}>
+                 {countdown ? (countdown.isPast ? 'HOJE' : `${countdown.days}d`) : '--'}
+               </p>
+             )}
+             
+             {countdown?.days && countdown.days < 7 && !countdown.isPast && (
                <div className="absolute inset-0 bg-rose-500/5 pointer-events-none"></div>
              )}
-          </div>
-        ))}
+        </div>
+
+        {/* CARD TEMPO BRUTO */}
+        <div className="glass-card p-8 rounded-[2rem] border-l-4 border-indigo-500/20 hover:border-l-white transition-all group overflow-hidden relative">
+             <div className="flex items-center gap-3 mb-6 relative z-10">
+               <div className="p-2 rounded bg-white/5 text-indigo-400"><Clock size={16}/></div>
+               <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">Tempo Bruto</span>
+             </div>
+             <p className="text-3xl font-black tracking-tighter text-white">{totalHours}h {totalMinutes % 60}m</p>
+        </div>
+
+        {/* CARD RITMO SEMANAL */}
+        <div className="glass-card p-8 rounded-[2rem] border-l-4 border-amber-500/20 hover:border-l-white transition-all group overflow-hidden relative">
+             <div className="flex items-center gap-3 mb-6 relative z-10">
+               <div className="p-2 rounded bg-white/5 text-amber-400"><Zap size={16}/></div>
+               <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">Ritmo Semanal</span>
+             </div>
+             <p className="text-3xl font-black tracking-tighter text-white">{thisWeekHours}h</p>
+        </div>
+
+        {/* CARD MÉDIA SIMULADOS */}
+        <div className="glass-card p-8 rounded-[2rem] border-l-4 border-emerald-500/20 hover:border-l-white transition-all group overflow-hidden relative">
+             <div className="flex items-center gap-3 mb-6 relative z-10">
+               <div className="p-2 rounded bg-white/5 text-emerald-400"><Target size={16}/></div>
+               <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">Média Simulados</span>
+             </div>
+             <p className="text-3xl font-black tracking-tighter text-white">
+               {mocks.length > 0 ? `${Math.round(mocks.reduce((acc, m) => acc + (m.score / m.totalQuestions), 0) / mocks.length * 100)}%` : '0%'}
+             </p>
+        </div>
+
+        {/* CARD META BATIDA - EDITÁVEL */}
+        <div className="glass-card p-8 rounded-[2rem] border-l-4 border-sky-500/20 hover:border-l-white transition-all group overflow-hidden relative">
+             <div className="flex items-center justify-between mb-6 relative z-10">
+               <div className="flex items-center gap-3">
+                  <div className="p-2 rounded bg-white/5 text-sky-400"><TrendingUp size={16}/></div>
+                  <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">Meta: {weeklyGoal}h</span>
+               </div>
+               <button onClick={() => setIsEditingGoal(!isEditingGoal)} className="p-1.5 text-slate-700 hover:text-white transition-colors bg-white/5 rounded-lg">
+                  {isEditingGoal ? <Check size={12} className="text-emerald-500" /> : <Edit2 size={12}/>}
+               </button>
+             </div>
+             
+             {isEditingGoal ? (
+               <input 
+                 type="number" 
+                 autoFocus
+                 className="w-full bg-black/40 border border-sky-500/50 rounded-xl px-3 py-2 text-white font-black text-xs outline-none"
+                 value={localGoal}
+                 onChange={(e) => setLocalGoal(parseInt(e.target.value) || 0)}
+                 onBlur={() => { onUpdateGoal(localGoal); setIsEditingGoal(false); }}
+               />
+             ) : (
+               <p className="text-3xl font-black tracking-tighter text-white">{weeklyGoalPercent}%</p>
+             )}
+        </div>
       </div>
 
-      <div className="glass-card rounded-[2.5rem] p-10">
+      <div className="glass-card rounded-[2.5rem] p-10 shadow-2xl">
           <div className="flex items-center justify-between mb-12">
             <div>
                <h3 className="text-xl font-black text-white tracking-tight flex items-center gap-3">
                   <ArrowUpRight className="text-indigo-400" /> ANÁLISE TÁTICA
                </h3>
                <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mt-1">Sessões de Performance Analítica</p>
-            </div>
-            <div className="flex gap-2">
-              <div className="px-4 py-2 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-[9px] font-black text-indigo-400 uppercase tracking-widest">Simulados</div>
             </div>
           </div>
           <div className="h-80 w-full">
@@ -219,7 +269,7 @@ const Dashboard: React.FC<DashboardProps> = ({ subjects, mocks, studyLogs, weekl
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-slate-800 gap-4 opacity-50">
                 <BarChart2 size={64} />
-                <p className="font-black text-[10px] uppercase tracking-[0.5em]">Aguardando Ingestão de Dados</p>
+                <p className="font-black text-[10px] uppercase tracking-[0.5em]">Aguardando Ingestão de Dados de Simulados</p>
               </div>
             )}
           </div>

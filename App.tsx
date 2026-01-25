@@ -80,7 +80,7 @@ const App: React.FC = () => {
         setUser(prev => prev ? { 
           ...prev, 
           examDate: profileRes.data.exam_date, 
-          weeklyGoal: profileRes.data.weekly_goal 
+          weeklyGoal: profileRes.data.weekly_goal || 20 
         } : null);
       }
 
@@ -111,7 +111,7 @@ const App: React.FC = () => {
           status: 'active',
           isOnline: true,
           examDate: profile?.exam_date,
-          weeklyGoal: profile?.weekly_goal
+          weeklyGoal: profile?.weekly_goal || 20
         };
         setUser(u);
         fetchData(u.id, u.role);
@@ -124,7 +124,26 @@ const App: React.FC = () => {
   const handleUpdateExamDate = async (date: string) => {
     if (user && supabase) {
       setUser({ ...user, examDate: date });
-      await supabase.from('profiles').update({ exam_date: date }).eq('id', user.id);
+      try {
+        const { error } = await supabase.from('profiles').update({ exam_date: date }).eq('id', user.id);
+        if (error) throw error;
+        console.log("[CORE] Data da prova sincronizada:", date);
+      } catch (e) {
+        console.error("[CORE] Falha ao salvar data da prova:", e);
+      }
+    }
+  };
+
+  const handleUpdateGoal = async (hours: number) => {
+    if (user && supabase) {
+      setUser({ ...user, weeklyGoal: hours });
+      try {
+        const { error } = await supabase.from('profiles').update({ weekly_goal: hours }).eq('id', user.id);
+        if (error) throw error;
+        console.log("[CORE] Meta semanal sincronizada:", hours);
+      } catch (e) {
+        console.error("[CORE] Falha ao salvar meta semanal:", e);
+      }
     }
   };
 
@@ -218,7 +237,7 @@ const App: React.FC = () => {
         </header>
         <div className="flex-1 overflow-y-auto custom-scrollbar p-10">
           <div className="max-w-7xl mx-auto">
-            {currentPage === 'inicio' && <Dashboard subjects={subjects || []} mocks={mocks} cycle={cycle} studyLogs={bottomStudyLogs} weeklyGoal={user.weeklyGoal || 20} examDate={user.examDate} onUpdateGoal={()=>{}} isDarkMode={true} />}
+            {currentPage === 'inicio' && <Dashboard subjects={subjects || []} mocks={mocks} cycle={cycle} studyLogs={bottomStudyLogs} weeklyGoal={user.weeklyGoal || 20} examDate={user.examDate} onUpdateGoal={handleUpdateGoal} onUpdateExamDate={handleUpdateExamDate} isDarkMode={true} />}
             {currentPage === 'disciplinas' && <Disciplinas user={user} subjects={subjects || []} setSubjects={setSubjects as any} predefinedEditais={editais} onAddLog={handleAddLogLocally} onUpdateExamDate={handleUpdateExamDate} />}
             {currentPage === 'revisao' && <Revisao user={user} subjects={subjects || []} setSubjects={setSubjects as any} onAddLog={handleAddLogLocally} />}
             {currentPage === 'ciclos' && <Ciclos user={user} subjects={subjects || []} cycle={cycle} setCycle={setCycle} />}
