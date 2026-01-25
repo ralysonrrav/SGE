@@ -7,7 +7,7 @@ import {
 import { 
   TrendingUp, Clock, Target, Zap, ArrowUpRight, BarChart2, 
   Flag, Trophy, ChevronRight, User as UserIcon, Flame, Timer, Calendar, Quote,
-  Edit2, Check
+  Edit2, Check, Loader2
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -44,6 +44,7 @@ const Dashboard: React.FC<DashboardProps> = ({ subjects, mocks, studyLogs, weekl
   const [localGoal, setLocalGoal] = useState(weeklyGoal);
   const [isEditingDate, setIsEditingDate] = useState(false);
   const [localDate, setLocalDate] = useState(examDate || '');
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => { 
     setIsMounted(true); 
@@ -87,11 +88,28 @@ const Dashboard: React.FC<DashboardProps> = ({ subjects, mocks, studyLogs, weekl
 
   const countdown = useMemo(() => {
     if (!examDate) return null;
-    const target = new Date(`${examDate}T12:00:00`);
+    // Forçar interpretação local da data para evitar fuso horário
+    const [year, month, day] = examDate.split('-').map(Number);
+    const target = new Date(year, month - 1, day, 12, 0, 0);
     const diff = target.getTime() - now.getTime();
+    if (diff <= 0 && target.toDateString() === now.toDateString()) return { days: 0, isPast: false, isToday: true };
     if (diff <= 0) return { days: 0, isPast: true };
     return { days: Math.floor(diff / (1000 * 60 * 60 * 24)), isPast: false };
   }, [examDate, now]);
+
+  const handleSaveDate = async () => {
+    setIsSaving(true);
+    await onUpdateExamDate(localDate);
+    setIsEditingDate(false);
+    setIsSaving(false);
+  };
+
+  const handleSaveGoal = async () => {
+    setIsSaving(true);
+    await onUpdateGoal(localGoal);
+    setIsEditingGoal(false);
+    setIsSaving(false);
+  };
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
@@ -159,8 +177,8 @@ const Dashboard: React.FC<DashboardProps> = ({ subjects, mocks, studyLogs, weekl
                   <div className={`p-2 rounded bg-white/5 ${countdown?.days && countdown.days < 7 ? 'text-rose-500' : 'text-indigo-400'}`}><Timer size={16}/></div>
                   <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">Dias p/ Prova</span>
                </div>
-               <button onClick={() => setIsEditingDate(!isEditingDate)} className="p-1.5 text-slate-700 hover:text-white transition-colors bg-white/5 rounded-lg">
-                  {isEditingDate ? <Check size={12} className="text-emerald-500" /> : <Edit2 size={12}/>}
+               <button onClick={() => isEditingDate ? handleSaveDate() : setIsEditingDate(true)} className="p-1.5 text-slate-700 hover:text-white transition-colors bg-white/5 rounded-lg">
+                  {isSaving ? <Loader2 size={12} className="animate-spin" /> : isEditingDate ? <Check size={12} className="text-emerald-500" /> : <Edit2 size={12}/>}
                </button>
              </div>
              
@@ -171,11 +189,12 @@ const Dashboard: React.FC<DashboardProps> = ({ subjects, mocks, studyLogs, weekl
                  className="w-full bg-black/40 border border-indigo-500/50 rounded-xl px-3 py-2 text-white font-black text-xs outline-none"
                  value={localDate}
                  onChange={(e) => setLocalDate(e.target.value)}
-                 onBlur={() => { onUpdateExamDate(localDate); setIsEditingDate(false); }}
+                 onBlur={handleSaveDate}
+                 onKeyDown={(e) => e.key === 'Enter' && handleSaveDate()}
                />
              ) : (
-               <p className={`text-3xl font-black tracking-tighter relative z-10 ${countdown?.isPast ? 'text-rose-500' : countdown?.days && countdown.days < 7 ? 'text-rose-500' : 'text-white'}`}>
-                 {countdown ? (countdown.isPast ? 'HOJE' : `${countdown.days}d`) : '--'}
+               <p className={`text-3xl font-black tracking-tighter relative z-10 ${countdown?.isToday ? 'text-emerald-500' : countdown?.isPast ? 'text-rose-500' : countdown?.days && countdown.days < 7 ? 'text-rose-500' : 'text-white'}`}>
+                 {countdown ? (countdown.isToday ? 'HOJE' : countdown.isPast ? 'PASSOU' : `${countdown.days}d`) : '--'}
                </p>
              )}
              
@@ -220,8 +239,8 @@ const Dashboard: React.FC<DashboardProps> = ({ subjects, mocks, studyLogs, weekl
                   <div className="p-2 rounded bg-white/5 text-sky-400"><TrendingUp size={16}/></div>
                   <span className="text-[9px] font-black uppercase text-slate-500 tracking-widest">Meta: {weeklyGoal}h</span>
                </div>
-               <button onClick={() => setIsEditingGoal(!isEditingGoal)} className="p-1.5 text-slate-700 hover:text-white transition-colors bg-white/5 rounded-lg">
-                  {isEditingGoal ? <Check size={12} className="text-emerald-500" /> : <Edit2 size={12}/>}
+               <button onClick={() => isEditingGoal ? handleSaveGoal() : setIsEditingGoal(true)} className="p-1.5 text-slate-700 hover:text-white transition-colors bg-white/5 rounded-lg">
+                  {isSaving ? <Loader2 size={12} className="animate-spin" /> : isEditingGoal ? <Check size={12} className="text-emerald-500" /> : <Edit2 size={12}/>}
                </button>
              </div>
              
@@ -232,7 +251,8 @@ const Dashboard: React.FC<DashboardProps> = ({ subjects, mocks, studyLogs, weekl
                  className="w-full bg-black/40 border border-sky-500/50 rounded-xl px-3 py-2 text-white font-black text-xs outline-none"
                  value={localGoal}
                  onChange={(e) => setLocalGoal(parseInt(e.target.value) || 0)}
-                 onBlur={() => { onUpdateGoal(localGoal); setIsEditingGoal(false); }}
+                 onBlur={handleSaveGoal}
+                 onKeyDown={(e) => e.key === 'Enter' && handleSaveGoal()}
                />
              ) : (
                <p className="text-3xl font-black tracking-tighter text-white">{weeklyGoalPercent}%</p>

@@ -122,21 +122,29 @@ const App: React.FC = () => {
   }, [fetchData]);
 
   const handleUpdateExamDate = async (date: string) => {
-    if (user && supabase) {
-      setUser({ ...user, examDate: date });
-      try {
-        const { error } = await supabase.from('profiles').update({ exam_date: date }).eq('id', user.id);
-        if (error) throw error;
-        console.log("[CORE] Data da prova sincronizada:", date);
-      } catch (e) {
-        console.error("[CORE] Falha ao salvar data da prova:", e);
-      }
+    if (!user || !supabase) return;
+    
+    // Atualização local imediata para responsividade
+    setUser(prev => prev ? { ...prev, examDate: date } : null);
+    
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ exam_date: date })
+        .eq('id', user.id);
+        
+      if (error) throw error;
+      console.log("[CORE] Data da prova persistida no banco:", date);
+    } catch (e) {
+      console.error("[CORE] Erro fatal ao persistir data da prova:", e);
+      // Opcional: Reverter estado local em caso de erro
+      fetchData(user.id, user.role);
     }
   };
 
   const handleUpdateGoal = async (hours: number) => {
     if (user && supabase) {
-      setUser({ ...user, weeklyGoal: hours });
+      setUser(prev => prev ? { ...prev, weeklyGoal: hours } : null);
       try {
         const { error } = await supabase.from('profiles').update({ weekly_goal: hours }).eq('id', user.id);
         if (error) throw error;
