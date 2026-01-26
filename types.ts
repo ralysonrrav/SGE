@@ -90,6 +90,7 @@ export interface StudyCycle {
   board: string;
   examDate: string;
   hoursPerDay: number;
+  num_ciclos?: number;
   schedule: any[];
   config_disciplinas: CycleSubject[];
   disciplinas_por_ciclo: number;

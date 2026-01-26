@@ -18,25 +18,31 @@ export const calcularTempoEstudo = (nivel: NivelConhecimento, peso: PesoDiscipli
   return base;
 };
 
-export const gerarCiclos = (subjects: CycleSubject[], perCycle: number): Ciclo[] => {
+/**
+ * Algoritmo de Geração Estratégica
+ * Garante que todas as matérias da lista apareçam pelo menos uma vez
+ * antes de iniciar qualquer repetição.
+ */
+export const gerarCiclos = (subjects: CycleSubject[], perCycle: number, totalCycles: number = 4): Ciclo[] => {
   if (!subjects.length) return [];
   
   const cycles: Ciclo[] = [];
+  let subjectPointer = 0; // Ponteiro global para garantir cobertura total
   
-  for (let i = 1; i <= 4; i++) {
+  for (let i = 1; i <= totalCycles; i++) {
     const selected: Array<Partial<CycleSubject> & { instanceId: string }> = [];
     
-    // Lógica de distribuição: seleciona matérias de forma rotativa para cada ciclo
     for (let j = 0; j < perCycle; j++) {
-      const index = ( (i - 1) * 2 + j ) % subjects.length;
-      const sub = subjects[index];
+      // Seleciona a matéria baseada no ponteiro global
+      const sub = subjects[subjectPointer % subjects.length];
       
-      // REMOVIDO Date.now() para garantir que o ID seja o mesmo entre recarregamentos
-      // O ID agora depende da matéria, da fase e da posição no ciclo.
+      // Criamos um instanceId único que vincula a matéria à sua posição específica no plano
       selected.push({
         ...sub,
-        instanceId: `${sub.id}-fase${i}-idx${j}`
+        instanceId: `${sub.id}-f${i}-p${j}-${Math.random().toString(36).substr(2, 5)}`
       });
+      
+      subjectPointer++; // Avança o ponteiro para a próxima matéria da lista
     }
 
     cycles.push({
