@@ -4,7 +4,7 @@ import { User } from '../types';
 import { supabase } from '../lib/supabase';
 import { 
   ShieldCheck, Award, Lock, Mail, User as UserIcon, Info, 
-  RefreshCw, Eye, BrainCircuit
+  RefreshCw, Eye, Timer
 } from 'lucide-react';
 
 interface LoginProps {
@@ -12,6 +12,34 @@ interface LoginProps {
   onLogin: (user: User) => void;
   onRegister: (user: User) => void;
 }
+
+const KronosLogo = ({ size = 64 }) => (
+  <svg 
+    width={size} 
+    height={size} 
+    viewBox="0 0 24 24" 
+    fill="none" 
+    xmlns="http://www.w3.org/2000/svg" 
+    className="kronos-icon-glow"
+  >
+    <defs>
+      <linearGradient id="kronos-logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#d946ef" />
+        <stop offset="100%" stopColor="#22d3ee" />
+      </linearGradient>
+    </defs>
+    <path 
+      d="M12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21Z" 
+      stroke="url(#kronos-logo-grad)" 
+      strokeWidth="1.5"
+    />
+    <path d="M12 1L12 3" stroke="url(#kronos-logo-grad)" strokeWidth="2" strokeLinecap="round"/>
+    <path d="M18 4L19 3" stroke="url(#kronos-logo-grad)" strokeWidth="2" strokeLinecap="round"/>
+    <path d="M6 4L5 3" stroke="url(#kronos-logo-grad)" strokeWidth="2" strokeLinecap="round"/>
+    <rect x="7" y="10" width="10" height="5" rx="1" stroke="url(#kronos-logo-grad)" strokeWidth="1" strokeDasharray="2 1"/>
+    <circle cx="12" cy="12.5" r="0.5" fill="url(#kronos-logo-grad)" />
+  </svg>
+);
 
 const Login: React.FC<LoginProps> = ({ onLogin, onRegister }) => {
   const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login');
@@ -26,7 +54,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister }) => {
     onLogin({
       id: 'demo-visitor-id',
       name: 'Visitante (Demo)',
-      email: 'demo@studyflow.com',
+      email: 'demo@kronos.com',
       role: 'visitor',
       status: 'active',
       isOnline: true,
@@ -82,10 +110,10 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister }) => {
       
       <div className="max-w-md w-full glass-card rounded-[3rem] p-12 relative z-10 border border-white/10 shadow-indigo-500/10 shadow-2xl">
         <div className="text-center mb-12">
-          <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-indigo-500/20">
-            <BrainCircuit size={32} className="text-white" />
+          <div className="flex justify-center mb-6">
+            <KronosLogo size={80} />
           </div>
-          <h1 className="text-3xl font-black text-white tracking-tighter neo-glow">StudyFlow</h1>
+          <h1 className="text-3xl font-black kronos-gradient tracking-widest uppercase">KRONOS</h1>
           <p className="text-[10px] font-black uppercase text-indigo-400 tracking-[0.4em] mt-2">Plataforma Estratégica</p>
         </div>
 

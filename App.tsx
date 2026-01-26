@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   LayoutDashboard, BookOpen, RefreshCcw, BarChart2, LogOut, Menu,
-  BrainCircuit, Users, Settings, Loader2, Lock, ShieldCheck, Calendar
+  BrainCircuit, Users, Settings, Loader2, Lock, ShieldCheck, Calendar, Timer, Clock
 } from 'lucide-react';
 import { User, Subject, MockExam, StudyCycle, StudySession, PredefinedEdital } from './types';
 import { supabase } from './lib/supabase';
@@ -25,6 +25,34 @@ const PAGE_BACKGROUNDS: Record<string, string> = {
   'admin_editais': 'https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=2070'
 };
 
+const KronosIcon = ({ size = 24, className = "" }) => (
+  <svg 
+    width={size} 
+    height={size} 
+    viewBox="0 0 24 24" 
+    fill="none" 
+    xmlns="http://www.w3.org/2000/svg" 
+    className={`kronos-icon-glow ${className}`}
+  >
+    <defs>
+      <linearGradient id="kronos-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#d946ef" />
+        <stop offset="100%" stopColor="#22d3ee" />
+      </linearGradient>
+    </defs>
+    <path 
+      d="M12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21Z" 
+      stroke="url(#kronos-grad)" 
+      strokeWidth="1.5"
+    />
+    <path d="M12 1L12 3" stroke="url(#kronos-grad)" strokeWidth="2" strokeLinecap="round"/>
+    <path d="M18 4L19 3" stroke="url(#kronos-grad)" strokeWidth="2" strokeLinecap="round"/>
+    <path d="M6 4L5 3" stroke="url(#kronos-grad)" strokeWidth="2" strokeLinecap="round"/>
+    <rect x="7" y="10" width="10" height="5" rx="1" stroke="url(#kronos-grad)" strokeWidth="1" strokeDasharray="2 1"/>
+    <circle cx="12" cy="12.5" r="0.5" fill="url(#kronos-grad)" />
+  </svg>
+);
+
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [currentPage, setCurrentPage] = useState('inicio');
@@ -38,7 +66,16 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
   const loggingOutRef = useRef(false);
+
+  // Relógio Digital em Tempo Real
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const fetchData = useCallback(async (userId: string, role: string) => {
     if (!supabase || loggingOutRef.current) return;
@@ -124,7 +161,6 @@ const App: React.FC = () => {
   const handleUpdateExamDate = async (date: string) => {
     if (!user || !supabase) return;
     
-    // Atualização local imediata para responsividade
     setUser(prev => prev ? { ...prev, examDate: date } : null);
     
     try {
@@ -137,7 +173,6 @@ const App: React.FC = () => {
       console.log("[CORE] Data da prova persistida no banco:", date);
     } catch (e) {
       console.error("[CORE] Erro fatal ao persistir data da prova:", e);
-      // Opcional: Reverter estado local em caso de erro
       fetchData(user.id, user.role);
     }
   };
@@ -180,10 +215,17 @@ const App: React.FC = () => {
 
   if (!user) return <Login users={allUsers} onLogin={(u) => { setUser(u); fetchData(u.id, u.role); }} onRegister={(u) => { setUser(u); fetchData(u.id, u.role); }} />;
 
-  const currentDateFormatted = new Date().toLocaleDateString('pt-BR', {
+  const currentDateFormatted = currentTime.toLocaleDateString('pt-BR', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric'
+  });
+
+  const currentTimeFormatted = currentTime.toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
   });
 
   return (
@@ -197,15 +239,15 @@ const App: React.FC = () => {
       <aside className={`fixed inset-y-0 left-0 z-50 w-52 glass-panel transform transition-all duration-500 lg:relative lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex flex-col h-full">
           <div className="p-8 flex items-center gap-2 cursor-pointer group" onClick={() => setCurrentPage('inicio')}>
-            <BrainCircuit className="text-indigo-500" size={24} />
-            <h1 className="text-xl font-black text-white">FLOW</h1>
+            <KronosIcon size={28} />
+            <h1 className="text-xl font-black text-white tracking-widest kronos-gradient">KRONOS</h1>
           </div>
           <nav className="flex-1 px-4 space-y-1">
             {[
               { id: 'inicio', label: 'HUB', icon: <LayoutDashboard size={16} />, roles: ['administrator', 'student', 'visitor'] },
               { id: 'disciplinas', label: 'QUESTS', icon: <BookOpen size={16} />, roles: ['administrator', 'student', 'visitor'] },
               { id: 'revisao', label: 'SYNC', icon: <RefreshCcw size={16} />, roles: ['administrator', 'student', 'visitor'] },
-              { id: 'ciclos', label: 'PLAN', icon: <BrainCircuit size={16} />, roles: ['administrator', 'student', 'visitor'] },
+              { id: 'ciclos', label: 'PLAN', icon: <Timer size={16} />, roles: ['administrator', 'student', 'visitor'] },
               { id: 'simulados', label: 'LOGS', icon: <BarChart2 size={16} />, roles: ['administrator', 'student', 'visitor'] },
               { id: 'admin_users', label: 'GOV', icon: <Users size={16} />, roles: ['administrator'] },
               { id: 'admin_editais', label: 'CORE', icon: <Settings size={16} />, roles: ['administrator'] },
@@ -232,11 +274,20 @@ const App: React.FC = () => {
               <h2 className="text-[9px] font-black uppercase tracking-[0.5em] text-slate-500">TERMINAL / <span className="text-white">{currentPage}</span></h2>
            </div>
            
-           <div className="flex items-center gap-3">
-             <div className="hidden md:flex items-center gap-2 px-3 py-1 bg-slate-900/50 rounded-full border border-white/5">
+           <div className="flex items-center gap-4">
+             {/* Airport Style Digital Clock */}
+             <div className="hidden md:flex items-center gap-3 px-4 py-1 bg-black/60 rounded-lg border border-white/10 shadow-[inset_0_0_15px_rgba(34,211,238,0.1)]">
+                <Clock size={12} className="text-cyan-400/70" />
+                <span className="text-[12px] font-black text-cyan-400 tabular-nums tracking-widest font-mono">
+                  {currentTimeFormatted}
+                </span>
+             </div>
+
+             <div className="hidden md:flex items-center gap-2 px-3 py-1 bg-slate-900/50 rounded-lg border border-white/5">
                 <Calendar size={12} className="text-indigo-400" />
                 <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest">{currentDateFormatted}</span>
              </div>
+             
              <div className="flex items-center gap-2 px-3 py-1 bg-slate-900 rounded-full border border-white/5 shadow-inner">
                <Lock size={12} className="text-indigo-500" />
                <span className="text-[8px] font-black text-slate-500 uppercase tracking-tighter">Acesso Privado Ativo</span>
