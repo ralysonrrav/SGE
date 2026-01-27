@@ -92,6 +92,22 @@ const Ciclos: React.FC<CiclosProps> = ({ user, subjects, cycle, setCycle }) => {
     } finally { setIsSaving(false); }
   };
 
+  // FUNCIONALIDADE DE CONCLUSÃO COM PERSISTÊNCIA
+  const toggleMateriaConcluida = async (instanceId: string) => {
+    if (isSaving) return;
+    
+    const isDone = materiasConcluidasIds.includes(instanceId);
+    const nextIds = isDone 
+      ? materiasConcluidasIds.filter(id => id !== instanceId)
+      : [...materiasConcluidasIds, instanceId];
+    
+    // Atualiza estado local para resposta instantânea na UI
+    setMateriasConcluidasIds(nextIds);
+    
+    // Persiste no banco de dados
+    await persistChanges({ materias_concluidas_ids: nextIds });
+  };
+
   // FUNCIONALIDADES DE EDIÇÃO MANUAL
   const removeMateriaFromCycle = async (cycleId: number, instanceId: string) => {
     const nextSchedule = activeCycles.map(c => {
@@ -119,8 +135,6 @@ const Ciclos: React.FC<CiclosProps> = ({ user, subjects, cycle, setCycle }) => {
     });
 
     if (sourceSub && targetSub) {
-      // Realizar o Swap de propriedades preservando instanceIds para não quebrar o progresso se possível, 
-      // mas aqui o mais seguro é trocar os objetos e recalculas tempos
       const updatedSchedule = nextSchedule.map(c => {
         let nextMaterias = c.materias.map(m => {
           if (c.id === swapSource.cycleId && m.instanceId === swapSource.instanceId) return { ...targetSub, instanceId: m.instanceId };
@@ -165,7 +179,6 @@ const Ciclos: React.FC<CiclosProps> = ({ user, subjects, cycle, setCycle }) => {
     }
   };
 
-  // Fixed missing handleGenerate function to create the study plan from current configurations
   const handleGenerate = async () => {
     if (!configSubjects.length) {
       alert("Por favor, adicione disciplinas à base antes de gerar o plano.");
@@ -289,7 +302,7 @@ const Ciclos: React.FC<CiclosProps> = ({ user, subjects, cycle, setCycle }) => {
                       <div className="flex items-center gap-5 min-w-0 flex-1">
                         <button 
                           disabled={isSaving} 
-                          onClick={() => m.instanceId && (materiasConcluidasIds.includes(m.instanceId) ? setMateriasConcluidasIds(prev => prev.filter(id => id !== m.instanceId)) : setMateriasConcluidasIds(prev => [...prev, m.instanceId]))} 
+                          onClick={() => m.instanceId && toggleMateriaConcluida(m.instanceId)} 
                           className={`w-8 h-8 rounded-xl flex items-center justify-center border-2 transition-all ${isDone ? 'bg-emerald-500 border-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20' : 'bg-transparent border-slate-700 hover:border-indigo-500'}`}
                         >
                           {isDone ? <CheckCircle2 size={16} strokeWidth={3} /> : <div className="w-1.5 h-1.5 bg-slate-800 rounded-full" />}
