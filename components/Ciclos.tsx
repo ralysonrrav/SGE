@@ -4,7 +4,7 @@ import {
   BrainCircuit, CheckCircle2, Target, Trophy, Clock, AlertCircle, 
   Loader2, RefreshCw, GripVertical, Wand2, Zap, ShieldCheck, 
   Settings2, Trash2, Plus, Info, AlertTriangle, Undo2, Database,
-  ArrowLeftRight, X, MousePointer2
+  ArrowLeftRight, X, MousePointer2, ShieldCheck as SessionShield
 } from 'lucide-react';
 import { User, Subject, CycleSubject, StudyCycle, NivelConhecimento, PesoDisciplina, Ciclo } from '../types';
 import { calcularTempoEstudo, gerarCiclos } from '../services/cycleLogic';
@@ -32,13 +32,13 @@ const Ciclos: React.FC<CiclosProps> = ({ user, subjects, cycle, setCycle }) => {
   const [showAddSubjectToCycle, setShowAddSubjectToCycle] = useState<number | null>(null);
 
   const [isSaving, setIsSaving] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedSubjectId, setSelectedSubjectId] = useState('');
   const [nivel, setNivel] = useState<NivelConhecimento>(NivelConhecimento.INTERMEDIARIO);
   const [peso, setPeso] = useState<PesoDisciplina>(PesoDisciplina.NORMAL);
 
+  // Efeito de Sincronização e Isolamento: Limpa estados se o ciclo mudar ou o usuário mudar
   useEffect(() => {
-    if (cycle) {
+    if (cycle && cycle.user_id === user.id) {
       const raw = cycle as any;
       setActiveCycles(Array.isArray(raw.schedule) ? raw.schedule : (raw.schedule?.cycles || []));
       setMateriasConcluidasIds(raw.materias_concluidas_ids || []);
@@ -48,8 +48,18 @@ const Ciclos: React.FC<CiclosProps> = ({ user, subjects, cycle, setCycle }) => {
       setHoursPerDay(raw.hours_per_day || 4);
       setMetaAtual(raw.meta_atual || 1);
       setMetasConcluidas(raw.metas_concluidas || 0);
+    } else {
+      // RESET TOTAL se o ciclo não pertencer ao usuário logado ou for nulo
+      setActiveCycles([]);
+      setMateriasConcluidasIds([]);
+      setConfigSubjects([]);
+      setNumCiclos(4);
+      setDisciplinasPorCiclo(3);
+      setHoursPerDay(4);
+      setMetaAtual(1);
+      setMetasConcluidas(0);
     }
-  }, [cycle?.id]);
+  }, [cycle?.id, user.id]); // user.id é a âncora de segurança
 
   const activePhaseId = useMemo(() => {
     if (!activeCycles.length) return 1;
@@ -71,7 +81,7 @@ const Ciclos: React.FC<CiclosProps> = ({ user, subjects, cycle, setCycle }) => {
       const nextSchedule = updates.schedule || activeCycles;
 
       const payload = {
-        user_id: user.id,
+        user_id: user.id, // Vínculo de segurança obrigatório
         board: updates.board || cycle?.board || 'Personalizado',
         exam_date: updates.exam_date || cycle?.examDate || user.examDate || new Date().toISOString().split('T')[0],
         hours_per_day: updates.hours_per_day !== undefined ? updates.hours_per_day : hoursPerDay,
@@ -84,31 +94,25 @@ const Ciclos: React.FC<CiclosProps> = ({ user, subjects, cycle, setCycle }) => {
         schedule: nextSchedule
       };
 
+      // Proteção de UID: eq('user_id', user.id) garante que o update só afete dados do proprietário
       const result = cycle?.id && !String(cycle.id).startsWith('local-')
-        ? await supabase.from('study_cycles').update(payload).eq('id', cycle.id).select().single()
+        ? await supabase.from('study_cycles').update(payload).eq('id', cycle.id).eq('user_id', user.id).select().single()
         : await supabase.from('study_cycles').insert([payload]).select().single();
 
       if (result.data) setCycle({ ...result.data, id: String(result.data.id) });
     } finally { setIsSaving(false); }
   };
 
-  // FUNCIONALIDADE DE CONCLUSÃO COM PERSISTÊNCIA
   const toggleMateriaConcluida = async (instanceId: string) => {
     if (isSaving) return;
-    
     const isDone = materiasConcluidasIds.includes(instanceId);
     const nextIds = isDone 
       ? materiasConcluidasIds.filter(id => id !== instanceId)
       : [...materiasConcluidasIds, instanceId];
-    
-    // Atualiza estado local para resposta instantânea na UI
     setMateriasConcluidasIds(nextIds);
-    
-    // Persiste no banco de dados
     await persistChanges({ materias_concluidas_ids: nextIds });
   };
 
-  // FUNCIONALIDADES DE EDIÇÃO MANUAL
   const removeMateriaFromCycle = async (cycleId: number, instanceId: string) => {
     const nextSchedule = activeCycles.map(c => {
       if (c.id === cycleId) {
@@ -123,17 +127,13 @@ const Ciclos: React.FC<CiclosProps> = ({ user, subjects, cycle, setCycle }) => {
 
   const swapMaterias = async (targetCycleId: number, targetInstanceId: string) => {
     if (!swapSource) return;
-
     const nextSchedule = [...activeCycles];
     let sourceSub: any = null;
     let targetSub: any = null;
-
-    // Localizar as duas matérias
     nextSchedule.forEach(c => {
       if (c.id === swapSource.cycleId) sourceSub = c.materias.find(m => m.instanceId === swapSource.instanceId);
       if (c.id === targetCycleId) targetSub = c.materias.find(m => m.instanceId === targetInstanceId);
     });
-
     if (sourceSub && targetSub) {
       const updatedSchedule = nextSchedule.map(c => {
         let nextMaterias = c.materias.map(m => {
@@ -143,7 +143,6 @@ const Ciclos: React.FC<CiclosProps> = ({ user, subjects, cycle, setCycle }) => {
         });
         return { ...c, materias: nextMaterias, tempoTotal: nextMaterias.reduce((acc, s) => acc + (s.tempoEstudo || 0), 0) };
       });
-
       setActiveCycles(updatedSchedule);
       await persistChanges({ schedule: updatedSchedule });
     }
@@ -153,7 +152,6 @@ const Ciclos: React.FC<CiclosProps> = ({ user, subjects, cycle, setCycle }) => {
   const addMateriaToSpecificCycle = async (cycleId: number, subjectId: string) => {
     const baseSub = configSubjects.find(s => String(s.id) === String(subjectId));
     if (!baseSub) return;
-
     const newInstanceId = `${baseSub.id}-manual-${Date.now()}`;
     const nextSchedule = activeCycles.map(c => {
       if (c.id === cycleId) {
@@ -162,7 +160,6 @@ const Ciclos: React.FC<CiclosProps> = ({ user, subjects, cycle, setCycle }) => {
       }
       return c;
     });
-
     setActiveCycles(nextSchedule);
     setShowAddSubjectToCycle(null);
     await persistChanges({ schedule: nextSchedule });
@@ -184,13 +181,11 @@ const Ciclos: React.FC<CiclosProps> = ({ user, subjects, cycle, setCycle }) => {
       alert("Por favor, adicione disciplinas à base antes de gerar o plano.");
       return;
     }
-    
     const newCycles = gerarCiclos(configSubjects, disciplinasPorCiclo, numCiclos);
     setActiveCycles(newCycles);
     setMetaAtual(1);
     setMetasConcluidas(0);
     setMateriasConcluidasIds([]);
-    
     await persistChanges({
       schedule: newCycles,
       meta_atual: 1,
@@ -206,7 +201,7 @@ const Ciclos: React.FC<CiclosProps> = ({ user, subjects, cycle, setCycle }) => {
   return (
     <div className="space-y-12 animate-in fade-in duration-700">
       
-      {/* HUD DE COMANDO */}
+      {/* HUD DE COMANDO COM INDICADOR DE SESSÃO */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="glass-card p-6 border-l-4 border-indigo-500 relative overflow-hidden">
           <div className="flex items-center gap-4">
@@ -216,6 +211,7 @@ const Ciclos: React.FC<CiclosProps> = ({ user, subjects, cycle, setCycle }) => {
               <p className="text-2xl font-black text-white"># {metaAtual}</p>
             </div>
           </div>
+          <div className="absolute -right-2 -bottom-2 opacity-5"><SessionShield size={64}/></div>
         </div>
         <div className="glass-card p-6 border-l-4 border-emerald-500 relative overflow-hidden">
           <div className="flex items-center gap-4">
@@ -224,6 +220,11 @@ const Ciclos: React.FC<CiclosProps> = ({ user, subjects, cycle, setCycle }) => {
               <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em]">Conquistas Acumuladas</p>
               <p className="text-2xl font-black text-white">{metasConcluidas}</p>
             </div>
+          </div>
+          {/* Badge de Sessão Isolada */}
+          <div className="absolute top-2 right-4 flex items-center gap-1.5 px-2 py-0.5 bg-emerald-500/10 rounded-full border border-emerald-500/20">
+             <SessionShield size={8} className="text-emerald-500" />
+             <span className="text-[7px] font-black text-emerald-500 uppercase tracking-tighter">Sessão Isolada</span>
           </div>
         </div>
         <div className="glass-card p-6 border-l-4 border-amber-500 relative overflow-hidden">
@@ -253,7 +254,7 @@ const Ciclos: React.FC<CiclosProps> = ({ user, subjects, cycle, setCycle }) => {
 
       {/* CICLOS EM EXECUÇÃO */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {activeCycles.map((ciclo) => {
+        {activeCycles.length > 0 ? activeCycles.map((ciclo) => {
           const isCurrent = ciclo.id === activePhaseId;
           const isCompleted = ciclo.id < activePhaseId;
           const progressCount = ciclo.materias.filter(m => materiasConcluidasIds.includes(m.instanceId || '')).length;
@@ -337,7 +338,12 @@ const Ciclos: React.FC<CiclosProps> = ({ user, subjects, cycle, setCycle }) => {
               </div>
             </div>
           );
-        })}
+        }) : (
+          <div className="md:col-span-2 py-20 text-center glass-card border-dashed border-white/5 opacity-50">
+             <BrainCircuit size={48} className="mx-auto text-slate-700 mb-6" />
+             <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.5em]">Nenhum Ciclo Estratégico Ativo para esta Estação</p>
+          </div>
+        )}
       </div>
 
       {/* MATRIZ DE CONFIGURAÇÃO (ABAIXO) */}

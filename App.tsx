@@ -81,6 +81,12 @@ const App: React.FC = () => {
     if (!supabase || loggingOutRef.current) return;
     
     try {
+      // Garantir que os estados sejam limpos antes de novas buscas para evitar vazamento entre sessões
+      setCycle(null); 
+      setSubjects(null);
+      setMocks([]);
+      setStudyLogs([]);
+
       const [subRes, logRes, mockRes, cycleRes, editalRes, profileRes] = await Promise.all([
         supabase.from('subjects').select('*').eq('user_id', userId),
         supabase.from('study_logs').select('*').eq('user_id', userId).order('date', { ascending: false }),
@@ -110,7 +116,14 @@ const App: React.FC = () => {
       }
 
       if (mockRes.data) setMocks(mockRes.data.map(m => ({ ...m, id: String(m.id), totalQuestions: m.total_questions, subjectPerformance: m.subject_performance || {} })));
-      if (cycleRes.data?.[0]) setCycle({ ...cycleRes.data[0], id: String(cycleRes.data[0].id) });
+      
+      // Sincronização Estrita do Ciclo: Se não encontrar, define como null explicitamente
+      if (cycleRes.data?.[0]) {
+        setCycle({ ...cycleRes.data[0], id: String(cycleRes.data[0].id) });
+      } else {
+        setCycle(null);
+      }
+
       if (editalRes.data) setEditais(editalRes.data.map(e => ({ ...e, id: String(e.id), examDate: e.exam_date, lastUpdated: e.last_updated })));
 
       if (profileRes.data) {
@@ -128,6 +141,7 @@ const App: React.FC = () => {
     } catch (e: any) {
       console.error("[Data-Sync] Falha no isolamento:", e);
       setSubjects([]);
+      setCycle(null);
     }
   }, []);
 
@@ -196,6 +210,9 @@ const App: React.FC = () => {
     if (supabase) await supabase.auth.signOut();
     setUser(null);
     setSubjects(null);
+    setCycle(null); // Limpeza de segurança no logout
+    setMocks([]);
+    setStudyLogs([]);
     setIsLoggingOut(false);
     loggingOutRef.current = false;
   };
