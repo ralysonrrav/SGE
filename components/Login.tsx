@@ -97,9 +97,16 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister }) => {
             isOnline: true
           });
         }
+      } else if (mode === 'forgot') {
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/`,
+        });
+        if (resetError) throw resetError;
+        setError({ msg: "E-mail de recuperação enviado! Verifique sua caixa de entrada.", type: 'success' });
       }
     } catch (err: any) {
       setError({ msg: err.message, type: 'error' });
+    } finally {
       setLoading(false);
     }
   };
@@ -135,10 +142,12 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister }) => {
             <Mail className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
             <input type="email" required className="w-full pl-14 pr-5 py-4 bg-white/5 border border-white/5 rounded-2xl text-white text-sm font-bold outline-none focus:border-indigo-500 transition-all" placeholder="E-mail" value={email} onChange={(e) => setEmail(e.target.value)} />
           </div>
-          <div className="relative">
-            <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
-            <input type="password" required className="w-full pl-14 pr-5 py-4 bg-white/5 border border-white/5 rounded-2xl text-white text-sm font-bold outline-none focus:border-indigo-500 transition-all" placeholder="Senha" value={password} onChange={(e) => setPassword(e.target.value)} />
-          </div>
+          {mode !== 'forgot' && (
+            <div className="relative">
+              <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+              <input type="password" required className="w-full pl-14 pr-5 py-4 bg-white/5 border border-white/5 rounded-2xl text-white text-sm font-bold outline-none focus:border-indigo-500 transition-all" placeholder="Senha" value={password} onChange={(e) => setPassword(e.target.value)} />
+            </div>
+          )}
           {mode === 'register' && (
             <div className="relative">
               <ShieldCheck className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
@@ -148,11 +157,16 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister }) => {
 
           <button disabled={loading} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-5 rounded-2xl mt-4 shadow-xl shadow-indigo-500/20 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50">
             {loading ? <RefreshCw className="animate-spin" size={18} /> : null}
-            {mode === 'login' ? 'AUTENTICAR' : 'CRIAR CONTA'}
+            {mode === 'login' ? 'AUTENTICAR' : mode === 'register' ? 'CRIAR CONTA' : 'RECUPERAR ACESSO'}
           </button>
         </form>
 
         <div className="mt-8 flex flex-col items-center gap-4">
+           {mode === 'login' && (
+             <button onClick={() => setMode('forgot')} className="text-[10px] font-black text-slate-500 uppercase tracking-widest hover:text-indigo-400">
+               Esqueci minha senha
+             </button>
+           )}
            <button onClick={() => setMode(mode === 'login' ? 'register' : 'login')} className="text-[10px] font-black text-slate-500 uppercase tracking-widest hover:text-indigo-400">
              {mode === 'login' ? 'Novo por aqui? Criar conta' : 'Já possui cadastro? Acessar'}
            </button>
