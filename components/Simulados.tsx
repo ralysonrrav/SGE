@@ -9,9 +9,10 @@ interface SimuladosProps {
   mocks: MockExam[];
   setMocks: React.Dispatch<React.SetStateAction<MockExam[]>>;
   subjects: Subject[];
+  activeMatrixId: string | null;
 }
 
-const Simulados: React.FC<SimuladosProps> = ({ user, mocks, setMocks, subjects }) => {
+const Simulados: React.FC<SimuladosProps> = ({ user, mocks, setMocks, subjects, activeMatrixId }) => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [title, setTitle] = useState('');
   const [score, setScore] = useState(0);
@@ -27,7 +28,8 @@ const Simulados: React.FC<SimuladosProps> = ({ user, mocks, setMocks, subjects }
       if (supabase && user.role !== 'visitor') {
         const { data } = await supabase.from('mocks').insert([{ 
           title: title.trim(), date, score, total_questions: total, 
-          subject_performance: {}, user_id: user.id 
+          subject_performance: {}, user_id: user.id,
+          matrix_id: activeMatrixId
         }]).select().single();
         if (data) finalId = String(data.id);
       }
