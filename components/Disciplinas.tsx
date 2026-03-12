@@ -13,9 +13,10 @@ interface DisciplinasProps {
   predefinedEditais: PredefinedEdital[];
   onAddLog: (log: StudySession) => void;
   onUpdateExamDate: (date: string) => void;
+  activeMatrixId: string | null;
 }
 
-export default function Disciplinas({ user, subjects, setSubjects, predefinedEditais, onAddLog, onUpdateExamDate }: DisciplinasProps) {
+export default function Disciplinas({ user, subjects, setSubjects, predefinedEditais, onAddLog, onUpdateExamDate, activeMatrixId }: DisciplinasProps) {
   const [newSubjectName, setNewSubjectName] = useState('');
   const [expandedSubject, setExpandedSubject] = useState<string | null>(null);
   const [newTopicTitle, setNewTopicTitle] = useState('');
@@ -76,7 +77,13 @@ export default function Disciplinas({ user, subjects, setSubjects, predefinedEdi
     setSubjects(prev => [...prev, newSub]);
     setNewSubjectName('');
     if (supabase && user.role !== 'visitor') {
-      const { data } = await supabase.from('subjects').insert([{ name: newSub.name, topics: [], user_id: user.id, color: newSub.color }]).select().single();
+      const { data } = await supabase.from('subjects').insert([{ 
+        name: newSub.name, 
+        topics: [], 
+        user_id: user.id, 
+        color: newSub.color,
+        matrix_id: activeMatrixId
+      }]).select().single();
       if (data) setSubjects(prev => prev.map(s => s.id === tempId ? { ...s, id: String(data.id) } : s));
     }
   };
@@ -120,7 +127,8 @@ export default function Disciplinas({ user, subjects, setSubjects, predefinedEdi
           topic_id: topicId,
           minutes: totalMins,
           date: targetDate,
-          type: 'estudo'
+          type: 'estudo',
+          matrix_id: activeMatrixId
         }]).select().single();
 
         if (logError) throw logError;
@@ -204,7 +212,13 @@ export default function Disciplinas({ user, subjects, setSubjects, predefinedEdi
                    const cloned: Subject[] = edital.subjects.map((sub, idx) => ({ ...sub, id: `local-import-${Date.now()}-${idx}`, topics: sub.topics.map(t => ({ ...t, id: `topic-${Math.random().toString(36).substr(2, 9)}`, completed: false, studyTimeMinutes: 0, questionsAttempted: 0, questionsCorrect: 0 })) }));
                    for (const s of cloned) {
                       if (supabase && user.role !== 'visitor') {
-                        const { data } = await supabase.from('subjects').insert([{ name: s.name, topics: s.topics, user_id: user.id, color: s.color }]).select().single();
+                        const { data } = await supabase.from('subjects').insert([{ 
+                          name: s.name, 
+                          topics: s.topics, 
+                          user_id: user.id, 
+                          color: s.color,
+                          matrix_id: activeMatrixId
+                        }]).select().single();
                         if (data) s.id = String(data.id);
                       }
                    }
