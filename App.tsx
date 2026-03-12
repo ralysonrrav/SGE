@@ -93,91 +93,68 @@ const App: React.FC = () => {
       setMocks([]);
       setStudyLogs([]);
 
-      // 1. Buscar Matrizes primeiro se não tivermos matrixId
+      // 1. Buscar Matrizes primeiro
       let currentMatrixId = matrixId;
       const { data: matrixData, error: mError } = await supabase.from('matrices').select('*').eq('user_id', userId);
       
       if (mError) {
         console.error("[Matrix] Erro ao buscar matrizes:", mError);
-        if (mError.code === 'PGRST116' || mError.message.includes('relation "public.matrices" does not exist')) {
-          alert("ERRO CRÍTICO: A tabela 'matrices' não foi encontrada no banco de dados. Por favor, execute o script SQL de configuração.");
-        }
-        return;
       }
 
-      if (matrixData) {
-        setMatrices(matrixData);
+      let finalMatrices = matrixData || [];
+      
+      // Se não houver matrizes, criar a primeira automaticamente
+      if (finalMatrices.length === 0) {
+        console.log("[Matrix] Criando matriz inicial...");
+        const { data: newMatrix } = await supabase.from('matrices').insert({
+          user_id: userId,
+          name: 'Matriz Principal',
+          is_active: true
+        }).select().single();
         
-        // Se não houver matrizes, criar a primeira automaticamente
-        if (matrixData.length === 0) {
-          console.log("[Matrix] Nenhuma matriz encontrada, criando padrão...");
-          const { data: newMatrix, error: createErr } = await supabase.from('matrices').insert({
-            user_id: userId,
-            name: 'Matriz Principal',
-            is_active: true
-          }).select().single();
-          
-          if (createErr) {
-            console.error("[Matrix] Erro ao criar matriz padrão:", createErr);
-            return;
-          }
-
-          if (newMatrix) {
-            setMatrices([newMatrix]);
-            currentMatrixId = newMatrix.id;
-            setActiveMatrixId(currentMatrixId);
-            await supabase.from('profiles').update({ active_matrix_id: currentMatrixId }).eq('id', userId);
-            
-            // MIGRATION: Vincular dados órfãos à nova matriz principal
-            console.log("[Matrix] Migrando dados antigos para a nova matriz principal...");
-            await Promise.all([
-              supabase.from('subjects').update({ matrix_id: currentMatrixId }).eq('user_id', userId).is('matrix_id', null),
-              supabase.from('study_logs').update({ matrix_id: currentMatrixId }).eq('user_id', userId).is('matrix_id', null),
-              supabase.from('mocks').update({ matrix_id: currentMatrixId }).eq('user_id', userId).is('matrix_id', null),
-              supabase.from('study_cycles').update({ matrix_id: currentMatrixId }).eq('user_id', userId).is('matrix_id', null)
-            ]);
-          }
-        } else {
-          // Se matrixId foi passado (troca ou criação), usamos ele. Caso contrário, buscamos a ativa ou a primeira.
-          if (!currentMatrixId) {
-            const active = matrixData.find(m => m.is_active) || matrixData[0];
-            currentMatrixId = active.id;
-          }
-          setActiveMatrixId(currentMatrixId);
+        if (newMatrix) {
+          finalMatrices = [newMatrix];
+          currentMatrixId = newMatrix.id;
         }
       }
 
-      // 2. Identificar a matriz ativa para pegar as configurações dela
-      const activeMatrix = (matrixData || []).find(m => m.id === currentMatrixId);
-
-      // Se ainda não tiver matriz, podemos estar em um estado inicial ou sem dados
-      // Se tivermos uma matriz ativa, filtramos por ela. Se não, mantemos o filtro por user_id para compatibilidade ou fallback
-      const queryFilter: any = { user_id: userId };
-      if (currentMatrixId) {
-        queryFilter.matrix_id = currentMatrixId;
+      setMatrices(finalMatrices);
+      
+      if (!currentMatrixId && finalMatrices.length > 0) {
+        const active = finalMatrices.find(m => m.is_active) || finalMatrices[0];
+        currentMatrixId = active.id;
       }
+      
+      setActiveMatrixId(currentMatrixId);
 
-      const [subRes, logRes, mockRes, cycleRes, editalRes, profileRes] = await Promise.all([
-        supabase.from('subjects').select('*').match(queryFilter),
-        supabase.from('study_logs').select('*').match(queryFilter).order('date', { ascending: false }),
-        supabase.from('mocks').select('*').match(queryFilter).order('date', { ascending: false }),
-        supabase.from('study_cycles').select('*').match(queryFilter).order('created_at', { ascending: false }).limit(1),
-        supabase.from('predefined_editais').select('*'),
-        supabase.from('profiles').select('exam_date, weekly_goal, active_matrix_id').eq('id', userId).single()
-      ]);
+      // 2. Definir Filtro de Busca
+      // Se tivermos uma matriz, buscamos dados dela OU dados que ainda não tem matriz (NULL)
+      // Isso garante que dados antigos apareçam até serem migrados
+      const { data: subRes } = await supabase.from('subjects').select('*').eq('user_id', userId);
+      const { data: logRes } = await supabase.from('study_logs').select('*').eq('user_id', userId).order('date', { ascending: false });
+      const { data: mockRes } = await supabase.from('mocks').select('*').eq('user_id', userId).order('date', { ascending: false });
+      const { data: cycleRes } = await supabase.from('study_cycles').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+      const { data: editalRes } = await supabase.from('predefined_editais').select('*');
+      const { data: profileRes } = await supabase.from('profiles').select('*').eq('id', userId).single();
 
-      if (subRes.data) {
-        setSubjects(subRes.data.map(s => ({
+      // Filtragem no Lado do Cliente para garantir que dados NULL apareçam na matriz ativa
+      const filterByMatrix = (items: any[]) => {
+        if (!currentMatrixId) return items;
+        return items.filter(item => !item.matrix_id || item.matrix_id === currentMatrixId);
+      };
+
+      if (subRes) {
+        const filteredSubs = filterByMatrix(subRes);
+        setSubjects(filteredSubs.map(s => ({
           ...s,
           id: String(s.id),
           topics: typeof s.topics === 'string' ? JSON.parse(s.topics) : (s.topics || [])
         })));
-      } else {
-        setSubjects([]);
       }
 
-      if (logRes.data) {
-        setStudyLogs(logRes.data.map(l => ({ 
+      if (logRes) {
+        const filteredLogs = filterByMatrix(logRes);
+        setStudyLogs(filteredLogs.map(l => ({ 
           ...l, 
           id: String(l.id), 
           topicId: l.topic_id, 
@@ -185,22 +162,24 @@ const App: React.FC = () => {
         })));
       }
 
-      if (mockRes.data) setMocks(mockRes.data.map(m => ({ ...m, id: String(m.id), totalQuestions: m.total_questions, subjectPerformance: m.subject_performance || {} })));
+      if (mockRes) {
+        const filteredMocks = filterByMatrix(mockRes);
+        setMocks(filteredMocks.map(m => ({ ...m, id: String(m.id), totalQuestions: m.total_questions, subjectPerformance: m.subject_performance || {} })));
+      }
       
-      // Sincronização Estrita do Ciclo: Se não encontrar, define como null explicitamente
-      if (cycleRes.data?.[0]) {
-        setCycle({ ...cycleRes.data[0], id: String(cycleRes.data[0].id) });
+      if (cycleRes?.[0]) {
+        const filteredCycles = filterByMatrix(cycleRes);
+        if (filteredCycles.length > 0) {
+          setCycle({ ...filteredCycles[0], id: String(filteredCycles[0].id) });
+        } else {
+          setCycle(null);
+        }
       } else {
         setCycle(null);
       }
 
-      if (editalRes.error) {
-        console.error("[Matrix] Erro ao buscar modelos (predefined_editais):", editalRes.error);
-      }
-
-      if (editalRes.data) {
-        console.log("[Matrix] Modelos carregados:", editalRes.data.length);
-        setEditais(editalRes.data.map(e => {
+      if (editalRes) {
+        setEditais(editalRes.map(e => {
           const rawSubjects = typeof e.subjects === 'string' ? JSON.parse(e.subjects) : (e.subjects || []);
           const parsedSubjects = rawSubjects.map((s: any) => ({
             ...s,
@@ -217,18 +196,19 @@ const App: React.FC = () => {
         }));
       }
 
-      if (profileRes.data) {
+      if (profileRes) {
+        const activeMatrix = finalMatrices.find(m => m.id === currentMatrixId);
         setUser(prev => prev ? { 
           ...prev, 
-          examDate: activeMatrix?.exam_date || profileRes.data.exam_date, 
-          weeklyGoal: activeMatrix?.weekly_goal || profileRes.data.weekly_goal || 20,
-          activeMatrixId: profileRes.data.active_matrix_id
+          examDate: activeMatrix?.exam_date || profileRes.exam_date, 
+          weeklyGoal: activeMatrix?.weekly_goal || profileRes.weekly_goal || 20,
+          activeMatrixId: profileRes.active_matrix_id
         } : null);
 
-        if (!currentMatrixId && profileRes.data.active_matrix_id) {
-          setActiveMatrixId(profileRes.data.active_matrix_id);
+        if (!currentMatrixId && profileRes.active_matrix_id) {
+          setActiveMatrixId(profileRes.active_matrix_id);
           // Recarregar com a matriz correta se necessário
-          fetchData(userId, role, profileRes.data.active_matrix_id);
+          fetchData(userId, role, profileRes.active_matrix_id);
           return;
         }
       }
