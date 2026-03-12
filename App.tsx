@@ -2,9 +2,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   LayoutDashboard, BookOpen, RefreshCcw, BarChart2, LogOut, Menu,
-  BrainCircuit, Users, Settings, Loader2, Lock, ShieldCheck, Calendar, Timer, Clock
+  BrainCircuit, Users, Settings, Loader2, Lock, ShieldCheck, Calendar, Timer, Clock,
+  Layers, Plus, Trash2, X, Database, DownloadCloud
 } from 'lucide-react';
-import { User, Subject, MockExam, StudyCycle, StudySession, PredefinedEdital } from './types';
+import { User, Subject, MockExam, StudyCycle, StudySession, PredefinedEdital, Matrix } from './types';
 import { supabase } from './lib/supabase';
 import Login from './components/Login';
 import Disciplinas from './components/Disciplinas';
@@ -62,10 +63,15 @@ const App: React.FC = () => {
   const [bottomStudyLogs, setStudyLogs] = useState<StudySession[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [editais, setEditais] = useState<PredefinedEdital[]>([]);
+  const [matrices, setMatrices] = useState<Matrix[]>([]);
+  const [activeMatrixId, setActiveMatrixId] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isCreateMatrixOpen, setIsCreateMatrixOpen] = useState(false);
+  const [newMatrixName, setNewMatrixName] = useState('');
+  const [isCreatingMatrix, setIsCreatingMatrix] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const loggingOutRef = useRef(false);
 
@@ -77,7 +83,7 @@ const App: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  const fetchData = useCallback(async (userId: string, role: string) => {
+  const fetchData = useCallback(async (userId: string, role: string, matrixId?: string | null) => {
     if (!supabase || loggingOutRef.current) return;
     
     try {
@@ -87,13 +93,77 @@ const App: React.FC = () => {
       setMocks([]);
       setStudyLogs([]);
 
+      // 1. Buscar Matrizes primeiro se não tivermos matrixId
+      let currentMatrixId = matrixId;
+      const { data: matrixData, error: mError } = await supabase.from('matrices').select('*').eq('user_id', userId);
+      
+      if (mError) {
+        console.error("[Matrix] Erro ao buscar matrizes:", mError);
+        if (mError.code === 'PGRST116' || mError.message.includes('relation "public.matrices" does not exist')) {
+          alert("ERRO CRÍTICO: A tabela 'matrices' não foi encontrada no banco de dados. Por favor, execute o script SQL de configuração.");
+        }
+        return;
+      }
+
+      if (matrixData) {
+        setMatrices(matrixData);
+        
+        // Se não houver matrizes, criar a primeira automaticamente
+        if (matrixData.length === 0) {
+          console.log("[Matrix] Nenhuma matriz encontrada, criando padrão...");
+          const { data: newMatrix, error: createErr } = await supabase.from('matrices').insert({
+            user_id: userId,
+            name: 'Matriz Principal',
+            is_active: true
+          }).select().single();
+          
+          if (createErr) {
+            console.error("[Matrix] Erro ao criar matriz padrão:", createErr);
+            return;
+          }
+
+          if (newMatrix) {
+            setMatrices([newMatrix]);
+            currentMatrixId = newMatrix.id;
+            setActiveMatrixId(currentMatrixId);
+            await supabase.from('profiles').update({ active_matrix_id: currentMatrixId }).eq('id', userId);
+            
+            // MIGRATION: Vincular dados órfãos à nova matriz principal
+            console.log("[Matrix] Migrando dados antigos para a nova matriz principal...");
+            await Promise.all([
+              supabase.from('subjects').update({ matrix_id: currentMatrixId }).eq('user_id', userId).is('matrix_id', null),
+              supabase.from('study_logs').update({ matrix_id: currentMatrixId }).eq('user_id', userId).is('matrix_id', null),
+              supabase.from('mocks').update({ matrix_id: currentMatrixId }).eq('user_id', userId).is('matrix_id', null),
+              supabase.from('study_cycles').update({ matrix_id: currentMatrixId }).eq('user_id', userId).is('matrix_id', null)
+            ]);
+          }
+        } else {
+          // Se matrixId foi passado (troca ou criação), usamos ele. Caso contrário, buscamos a ativa ou a primeira.
+          if (!currentMatrixId) {
+            const active = matrixData.find(m => m.is_active) || matrixData[0];
+            currentMatrixId = active.id;
+          }
+          setActiveMatrixId(currentMatrixId);
+        }
+      }
+
+      // 2. Identificar a matriz ativa para pegar as configurações dela
+      const activeMatrix = (matrixData || []).find(m => m.id === currentMatrixId);
+
+      // Se ainda não tiver matriz, podemos estar em um estado inicial ou sem dados
+      // Se tivermos uma matriz ativa, filtramos por ela. Se não, mantemos o filtro por user_id para compatibilidade ou fallback
+      const queryFilter: any = { user_id: userId };
+      if (currentMatrixId) {
+        queryFilter.matrix_id = currentMatrixId;
+      }
+
       const [subRes, logRes, mockRes, cycleRes, editalRes, profileRes] = await Promise.all([
-        supabase.from('subjects').select('*').eq('user_id', userId),
-        supabase.from('study_logs').select('*').eq('user_id', userId).order('date', { ascending: false }),
-        supabase.from('mocks').select('*').eq('user_id', userId).order('date', { ascending: false }),
-        supabase.from('study_cycles').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(1),
+        supabase.from('subjects').select('*').match(queryFilter),
+        supabase.from('study_logs').select('*').match(queryFilter).order('date', { ascending: false }),
+        supabase.from('mocks').select('*').match(queryFilter).order('date', { ascending: false }),
+        supabase.from('study_cycles').select('*').match(queryFilter).order('created_at', { ascending: false }).limit(1),
         supabase.from('predefined_editais').select('*'),
-        supabase.from('profiles').select('exam_date, weekly_goal').eq('id', userId).single()
+        supabase.from('profiles').select('exam_date, weekly_goal, active_matrix_id').eq('id', userId).single()
       ]);
 
       if (subRes.data) {
@@ -124,14 +194,43 @@ const App: React.FC = () => {
         setCycle(null);
       }
 
-      if (editalRes.data) setEditais(editalRes.data.map(e => ({ ...e, id: String(e.id), examDate: e.exam_date, lastUpdated: e.last_updated })));
+      if (editalRes.error) {
+        console.error("[Matrix] Erro ao buscar modelos (predefined_editais):", editalRes.error);
+      }
+
+      if (editalRes.data) {
+        console.log("[Matrix] Modelos carregados:", editalRes.data.length);
+        setEditais(editalRes.data.map(e => {
+          const rawSubjects = typeof e.subjects === 'string' ? JSON.parse(e.subjects) : (e.subjects || []);
+          const parsedSubjects = rawSubjects.map((s: any) => ({
+            ...s,
+            topics: typeof s.topics === 'string' ? JSON.parse(s.topics) : (s.topics || [])
+          }));
+          
+          return { 
+            ...e, 
+            id: String(e.id), 
+            examDate: e.exam_date, 
+            lastUpdated: e.last_updated,
+            subjects: parsedSubjects
+          };
+        }));
+      }
 
       if (profileRes.data) {
         setUser(prev => prev ? { 
           ...prev, 
-          examDate: profileRes.data.exam_date, 
-          weeklyGoal: profileRes.data.weekly_goal || 20 
+          examDate: activeMatrix?.exam_date || profileRes.data.exam_date, 
+          weeklyGoal: activeMatrix?.weekly_goal || profileRes.data.weekly_goal || 20,
+          activeMatrixId: profileRes.data.active_matrix_id
         } : null);
+
+        if (!currentMatrixId && profileRes.data.active_matrix_id) {
+          setActiveMatrixId(profileRes.data.active_matrix_id);
+          // Recarregar com a matriz correta se necessário
+          fetchData(userId, role, profileRes.data.active_matrix_id);
+          return;
+        }
       }
 
       if (role === 'administrator') {
@@ -178,6 +277,13 @@ const App: React.FC = () => {
     setUser(prev => prev ? { ...prev, examDate: date } : null);
     
     try {
+      if (activeMatrixId) {
+        await supabase
+          .from('matrices')
+          .update({ exam_date: date })
+          .eq('id', activeMatrixId);
+      }
+
       const { error } = await supabase
         .from('profiles')
         .update({ exam_date: date })
@@ -187,7 +293,7 @@ const App: React.FC = () => {
       console.log("[CORE] Data da prova persistida no banco:", date);
     } catch (e) {
       console.error("[CORE] Erro fatal ao persistir data da prova:", e);
-      fetchData(user.id, user.role);
+      fetchData(user.id, user.role, activeMatrixId);
     }
   };
 
@@ -195,12 +301,121 @@ const App: React.FC = () => {
     if (user && supabase) {
       setUser(prev => prev ? { ...prev, weeklyGoal: hours } : null);
       try {
+        if (activeMatrixId) {
+          await supabase
+            .from('matrices')
+            .update({ weekly_goal: hours })
+            .eq('id', activeMatrixId);
+        }
         const { error } = await supabase.from('profiles').update({ weekly_goal: hours }).eq('id', user.id);
         if (error) throw error;
         console.log("[CORE] Meta semanal sincronizada:", hours);
       } catch (e) {
         console.error("[CORE] Falha ao salvar meta semanal:", e);
       }
+    }
+  };
+
+  const handleSwitchMatrix = async (matrixId: string) => {
+    if (!user || !supabase) return;
+    setActiveMatrixId(matrixId);
+    try {
+      await supabase.from('profiles').update({ active_matrix_id: matrixId }).eq('id', user.id);
+      await supabase.from('matrices').update({ is_active: false }).eq('user_id', user.id);
+      await supabase.from('matrices').update({ is_active: true }).eq('id', matrixId);
+      fetchData(user.id, user.role, matrixId);
+    } catch (e) {
+      console.error("[Matrix] Erro ao trocar matriz:", e);
+    }
+  };
+
+  const handleCreateMatrix = async (name: string) => {
+    if (!user || !supabase || !name.trim()) return;
+    setIsCreatingMatrix(true);
+    try {
+      const { data, error } = await supabase.from('matrices').insert({
+        user_id: user.id,
+        name: name.trim(),
+        is_active: true
+      }).select().single();
+
+      if (error) throw error;
+      if (data) {
+        await supabase.from('matrices').update({ is_active: false }).eq('user_id', user.id).neq('id', data.id);
+        await supabase.from('profiles').update({ active_matrix_id: data.id }).eq('id', user.id);
+        setIsCreateMatrixOpen(false);
+        setNewMatrixName('');
+        fetchData(user.id, user.role, data.id);
+      }
+    } catch (e) {
+      console.error("[Matrix] Erro ao criar matriz:", e);
+      alert("Erro ao criar ambiente. Verifique a conexão.");
+    } finally {
+      setIsCreatingMatrix(false);
+    }
+  };
+
+  const handleCreateFromTemplate = async (edital: PredefinedEdital) => {
+    if (!user || !supabase) return;
+    setIsCreatingMatrix(true);
+    try {
+      console.log("[Matrix] Criando a partir do modelo:", edital.name);
+      
+      // 1. Criar a Matriz
+      const { data: matrix, error: mErr } = await supabase.from('matrices').insert({
+        user_id: user.id,
+        name: edital.name,
+        exam_date: edital.examDate,
+        is_active: true
+      }).select().single();
+
+      if (mErr) {
+        console.error("[Matrix] Erro ao criar matriz:", mErr);
+        throw mErr;
+      }
+
+      if (matrix) {
+        // 2. Desativar outras matrizes e atualizar perfil
+        await Promise.all([
+          supabase.from('matrices').update({ is_active: false }).eq('user_id', user.id).neq('id', matrix.id),
+          supabase.from('profiles').update({ active_matrix_id: matrix.id }).eq('id', user.id)
+        ]);
+
+        // 3. Clonar as disciplinas do edital para a nova matriz
+        const subjects = edital.subjects || [];
+        if (subjects.length > 0) {
+          const subjectsToInsert = subjects.map(sub => ({
+            user_id: user.id,
+            matrix_id: matrix.id,
+            name: sub.name,
+            color: sub.color,
+            topics: (sub.topics || []).map(t => ({
+              id: `topic-${Math.random().toString(36).substr(2, 9)}`,
+              title: t.title,
+              importance: t.importance || 3,
+              completed: false,
+              studyTimeMinutes: 0,
+              questionsAttempted: 0,
+              questionsCorrect: 0
+            }))
+          }));
+
+          const { error: sErr } = await supabase.from('subjects').insert(subjectsToInsert);
+          if (sErr) {
+            console.error("[Matrix] Erro ao inserir disciplinas:", sErr);
+            throw sErr;
+          }
+        }
+
+        setIsCreateMatrixOpen(false);
+        await fetchData(user.id, user.role, matrix.id);
+        console.log("[Matrix] Ambiente criado e dados carregados com sucesso.");
+      }
+    } catch (e: any) {
+      console.error("[Matrix] Erro fatal ao criar do modelo:", e);
+      alert(`Erro ao importar modelo: ${e.message || 'Erro desconhecido'}`);
+    } finally {
+      setIsCreatingMatrix(false);
     }
   };
 
@@ -253,12 +468,54 @@ const App: React.FC = () => {
         <div className="scanline"></div>
       </div>
 
-      <aside className={`fixed inset-y-0 left-0 z-50 w-52 glass-panel transform transition-all duration-500 lg:relative lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 glass-panel transform transition-all duration-500 lg:relative lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex flex-col h-full">
-          <div className="p-8 flex items-center gap-2 cursor-pointer group" onClick={() => setCurrentPage('inicio')}>
-            <KronosIcon size={28} />
+          <div className="p-8 flex items-center gap-3 cursor-pointer group" onClick={() => setCurrentPage('inicio')}>
+            <div className="p-2 bg-indigo-500/10 rounded-xl group-hover:bg-indigo-500/20 transition-all">
+              <KronosIcon size={24} />
+            </div>
             <h1 className="text-xl font-black text-white tracking-widest kronos-gradient">KRONOS</h1>
           </div>
+
+          {/* Workspace Switcher - Redesenhado */}
+          <div className="px-4 mb-8">
+            <div className="bg-black/40 border border-white/10 rounded-2xl p-4 shadow-2xl">
+              <div className="flex items-center justify-between mb-4 px-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse shadow-[0_0_8px_rgba(99,102,241,0.8)]"></div>
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Ambiente Ativo</span>
+                </div>
+                <button 
+                  onClick={() => setIsCreateMatrixOpen(true)}
+                  className="p-1.5 hover:bg-indigo-500/20 rounded-lg text-indigo-400 transition-all hover:scale-110 border border-white/5"
+                  title="Novo Ambiente"
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
+              
+              <div className="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+                {matrices.map(m => (
+                  <button 
+                    key={m.id} 
+                    onClick={() => handleSwitchMatrix(m.id)}
+                    className={`w-full group flex items-center justify-between px-3 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-tight transition-all border ${
+                      activeMatrixId === m.id 
+                        ? 'bg-indigo-600/20 border-indigo-500/50 text-white shadow-[0_0_15px_rgba(99,102,241,0.1)]' 
+                        : 'text-slate-500 hover:text-slate-300 hover:bg-white/5 border-transparent'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      <Layers size={12} className={activeMatrixId === m.id ? "text-indigo-400" : "text-slate-600 group-hover:text-slate-400"} />
+                      <span className="truncate">{m.name}</span>
+                    </div>
+                    {activeMatrixId === m.id && <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.8)]"></div>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
           <nav className="flex-1 px-4 space-y-1">
             {[
               { id: 'inicio', label: 'HUB', icon: <LayoutDashboard size={16} />, roles: ['administrator', 'student', 'visitor'] },
@@ -314,10 +571,10 @@ const App: React.FC = () => {
         <div className="flex-1 overflow-y-auto custom-scrollbar p-10">
           <div className="max-w-7xl mx-auto">
             {currentPage === 'inicio' && <Dashboard subjects={subjects || []} mocks={mocks} cycle={cycle} studyLogs={bottomStudyLogs} weeklyGoal={user.weeklyGoal || 20} examDate={user.examDate} onUpdateGoal={handleUpdateGoal} onUpdateExamDate={handleUpdateExamDate} isDarkMode={true} />}
-            {currentPage === 'disciplinas' && <Disciplinas user={user} subjects={subjects || []} setSubjects={setSubjects as any} predefinedEditais={editais} onAddLog={handleAddLogLocally} onUpdateExamDate={handleUpdateExamDate} />}
-            {currentPage === 'revisao' && <Revisao user={user} subjects={subjects || []} setSubjects={setSubjects as any} onAddLog={handleAddLogLocally} />}
-            {currentPage === 'ciclos' && <Ciclos user={user} subjects={subjects || []} cycle={cycle} setCycle={setCycle} />}
-            {currentPage === 'simulados' && <Simulados user={user} mocks={mocks} setMocks={setMocks} subjects={subjects || []} />}
+            {currentPage === 'disciplinas' && <Disciplinas user={user} subjects={subjects || []} setSubjects={setSubjects as any} predefinedEditais={editais} onAddLog={handleAddLogLocally} onUpdateExamDate={handleUpdateExamDate} activeMatrixId={activeMatrixId} />}
+            {currentPage === 'revisao' && <Revisao user={user} subjects={subjects || []} setSubjects={setSubjects as any} onAddLog={handleAddLogLocally} activeMatrixId={activeMatrixId} />}
+            {currentPage === 'ciclos' && <Ciclos user={user} subjects={subjects || []} cycle={cycle} setCycle={setCycle} activeMatrixId={activeMatrixId} />}
+            {currentPage === 'simulados' && <Simulados user={user} mocks={mocks} setMocks={setMocks} subjects={subjects || []} activeMatrixId={activeMatrixId} />}
             {currentPage === 'admin_users' && <Admin user={user} users={allUsers} setUsers={setAllUsers} view="users" editais={editais} setEditais={setEditais} />}
             {currentPage === 'admin_editais' && <Admin user={user} users={allUsers} setUsers={setAllUsers} view="editais" editais={editais} setEditais={setEditais} />}
           </div>
@@ -325,6 +582,110 @@ const App: React.FC = () => {
       </main>
 
       {isProfileOpen && <Profile user={user} onUpdate={()=>{}} onDelete={handleLogout} onClose={() => setIsProfileOpen(false)} onExport={()=>{}} onImport={()=>{}} />}
+
+      {/* Modal de Gestão de Ambientes (Hub) */}
+      {isCreateMatrixOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-950/90 backdrop-blur-2xl animate-in fade-in">
+          <div className="glass-card w-full max-w-4xl rounded-[3rem] p-10 border border-white/10 shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <div className="flex items-center justify-between mb-10">
+              <div className="flex items-center gap-4">
+                <div className="p-4 bg-indigo-500/10 rounded-2xl text-indigo-400">
+                  <Layers size={32} />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-black text-white uppercase tracking-tighter">Gestão de Ambientes</h3>
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Selecione, crie ou importe seu foco de estudo</p>
+                </div>
+              </div>
+              <button onClick={() => setIsCreateMatrixOpen(false)} className="p-3 hover:bg-white/5 rounded-2xl text-slate-500 hover:text-white transition-all">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+              {/* Coluna Esquerda: Criação e Meus Ambientes */}
+              <div className="space-y-10">
+                <section>
+                  <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.3em] mb-4 ml-1">Criar Personalizado</h4>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="NOME DO CONCURSO..."
+                      className="flex-1 px-6 py-4 rounded-2xl border border-white/10 bg-black/40 text-white font-black text-xs uppercase outline-none focus:border-indigo-500 transition-all"
+                      value={newMatrixName}
+                      onChange={(e) => setNewMatrixName(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleCreateMatrix(newMatrixName)}
+                    />
+                    <button 
+                      disabled={isCreatingMatrix || !newMatrixName.trim()}
+                      onClick={() => handleCreateMatrix(newMatrixName)}
+                      className="bg-indigo-600 text-white px-6 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-500 transition-all disabled:opacity-50"
+                    >
+                      {isCreatingMatrix ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                    </button>
+                  </div>
+                </section>
+
+                <section>
+                  <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-4 ml-1">Meus Ambientes Ativos</h4>
+                  <div className="grid grid-cols-1 gap-2">
+                    {matrices.map(m => (
+                      <button 
+                        key={m.id} 
+                        onClick={() => { handleSwitchMatrix(m.id); setIsCreateMatrixOpen(false); }}
+                        className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${
+                          activeMatrixId === m.id 
+                            ? 'bg-indigo-600/20 border-indigo-500/50 text-white' 
+                            : 'bg-white/5 border-transparent text-slate-400 hover:text-white hover:bg-white/10'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Layers size={14} className={activeMatrixId === m.id ? "text-indigo-400" : "text-slate-600"} />
+                          <span className="text-[11px] font-black uppercase tracking-tight">{m.name}</span>
+                        </div>
+                        {activeMatrixId === m.id && <ShieldCheck size={14} className="text-indigo-500" />}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              </div>
+
+              {/* Coluna Direita: Modelos (Matrizes Cadastradas) */}
+              <div className="space-y-6">
+                <h4 className="text-[10px] font-black text-amber-500 uppercase tracking-[0.3em] mb-4 ml-1">Modelos Disponíveis (Matrizes)</h4>
+                <div className="grid grid-cols-1 gap-3">
+                  {editais.map(edital => (
+                    <div key={edital.id} className="group bg-black/40 p-6 rounded-3xl border border-white/5 hover:border-amber-500/30 transition-all">
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <h5 className="font-black text-white text-sm uppercase tracking-tight">{edital.name}</h5>
+                          <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{edital.organization}</p>
+                        </div>
+                        <div className="p-2 bg-amber-500/10 rounded-lg text-amber-500">
+                          <Database size={14} />
+                        </div>
+                      </div>
+                      <button 
+                        disabled={isCreatingMatrix}
+                        onClick={() => handleCreateFromTemplate(edital)}
+                        className="w-full py-3 bg-white/5 border border-white/5 text-white text-[9px] font-black uppercase tracking-widest rounded-xl hover:bg-amber-600 transition-all flex items-center justify-center gap-2"
+                      >
+                        {isCreatingMatrix ? <Loader2 size={12} className="animate-spin" /> : <DownloadCloud size={12} />}
+                        Usar este Modelo
+                      </button>
+                    </div>
+                  ))}
+                  {editais.length === 0 && (
+                    <div className="p-10 text-center border-2 border-dashed border-white/5 rounded-3xl opacity-30">
+                      <p className="text-[10px] font-black uppercase tracking-widest">Nenhum modelo cadastrado</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
