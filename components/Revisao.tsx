@@ -12,9 +12,10 @@ interface RevisaoProps {
   setSubjects: React.Dispatch<React.SetStateAction<Subject[]>>;
   // Fixed onAddLog signature to be consistent with StudySession type used in handleAddLogLocally in App.tsx
   onAddLog: (log: StudySession) => void;
+  activeMatrixId: string | null;
 }
 
-const Revisao: React.FC<RevisaoProps> = ({ user, subjects, setSubjects, onAddLog }) => {
+const Revisao: React.FC<RevisaoProps> = ({ user, subjects, setSubjects, onAddLog, activeMatrixId }) => {
   const [editingTopicId, setEditingTopicId] = useState<string | null>(null);
   const [editMinutes, setEditMinutes] = useState(0);
   const [editAttempted, setEditAttempted] = useState(0);
@@ -63,10 +64,23 @@ const Revisao: React.FC<RevisaoProps> = ({ user, subjects, setSubjects, onAddLog
     try {
       if (supabase && user.role !== 'visitor' && !String(subjectId).startsWith('local-')) {
         await supabase.from('subjects').update({ topics: updatedTopics }).eq('id', subjectId).eq('user_id', user.id);
+        
+        // Registrar log de revisão no Supabase para estatísticas
+        if (editMinutes > 0) {
+          const dbSubId = isNaN(Number(subjectId)) ? subjectId : parseInt(subjectId);
+          await supabase.from('study_logs').insert([{
+            user_id: user.id,
+            subject_id: dbSubId,
+            topic_id: topicId,
+            minutes: editMinutes,
+            date: new Date().toISOString(),
+            type: 'revisao',
+            matrix_id: activeMatrixId
+          }]);
+        }
       }
       setSubjects(prev => prev.map(s => String(s.id) === String(subjectId) ? { ...s, topics: updatedTopics } : s));
       
-      // Fixed: Construct a StudySession object for consistency with other components and passed handler
       if (editMinutes > 0) {
         onAddLog({
           id: `rev-${Date.now()}`,
