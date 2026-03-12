@@ -21,31 +21,39 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onDelete, onClose, on
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleUpdateInfo = (e: React.FormEvent) => {
+  const handleUpdateInfo = async (e: React.FormEvent) => {
     e.preventDefault();
-    onUpdate({ ...user, name, email });
-    alert("Perfil atualizado com sucesso!");
+    try {
+      await onUpdate({ ...user, name, email });
+      alert("Perfil atualizado com sucesso!");
+    } catch (e) {
+      // Erro já tratado no App.tsx
+    }
   };
 
-  const handleChangePassword = (e: React.FormEvent) => {
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newPassword !== confirmPassword) {
       alert("As senhas não coincidem!");
       return;
     }
-    onUpdate({ ...user, password: newPassword });
-    setPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
-    alert("Senha alterada com sucesso!");
+    try {
+      await onUpdate({ ...user, password: newPassword });
+      setPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      alert("Senha alterada com sucesso! Na próxima vez, use sua nova senha.");
+    } catch (e) {
+      // Erro já tratado no App.tsx
+    }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (confirm("Isso substituirá todos os seus dados atuais (disciplinas, simulados, etc). Continuar?")) {
-        onImport(file);
-      }
+      // Removido confirm() pois pode ser bloqueado em iframes
+      // O componente App.tsx tratará a confirmação se necessário ou faremos direto
+      onImport(file);
     }
   };
 
