@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { User, PredefinedEdital, Subject } from '../types';
+import { User, PredefinedEdital, Subject, Topic } from '../types';
 import { supabase } from '../lib/supabase';
 import { 
   Trash2, Edit3, X, Save, Search, Loader2, 
