@@ -1,4 +1,14 @@
 
+export interface Matrix {
+  id: string;
+  user_id: string;
+  name: string;
+  exam_date?: string;
+  weekly_goal?: number;
+  created_at: string;
+  is_active: boolean;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -10,6 +20,7 @@ export interface User {
   lastAccess?: string;
   weeklyGoal?: number;
   examDate?: string;
+  activeMatrixId?: string;
 }
 
 export interface StudySession {
@@ -19,6 +30,7 @@ export interface StudySession {
   minutes: number;
   date: string;
   type: 'estudo' | 'revisao';
+  matrix_id?: string;
 }
 
 export interface Topic {
@@ -39,6 +51,7 @@ export interface Subject {
   name: string;
   topics: Topic[];
   color: string;
+  matrix_id?: string;
 }
 
 export enum NivelConhecimento {
@@ -82,11 +95,13 @@ export interface MockExam {
   score: number;
   totalQuestions: number;
   subjectPerformance: Record<string, number>;
+  matrix_id?: string;
 }
 
 export interface StudyCycle {
   id: string;
   user_id?: string;
+  matrix_id?: string;
   board: string;
   examDate: string;
   hoursPerDay: number;
