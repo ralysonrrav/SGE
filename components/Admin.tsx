@@ -44,6 +44,10 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
   const [isEditalModalOpen, setIsEditalModalOpen] = useState(false);
   const [editingEdital, setEditingEdital] = useState<PredefinedEdital | null>(null);
   const [editalForm, setEditalForm] = useState({ name: '', organization: '', examDate: '' });
+  const [editalSubjects, setEditalSubjects] = useState<Subject[]>([]);
+  const [newSubjectName, setNewSubjectName] = useState('');
+  const [expandedSubjectId, setExpandedSubjectId] = useState<string | null>(null);
+  const [newTopicTitle, setNewTopicTitle] = useState('');
   const [editalToDelete, setEditalToDelete] = useState<PredefinedEdital | null>(null);
 
   // Modal de Purga (Usuários)
@@ -74,11 +78,71 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
         organization: edital.organization, 
         examDate: edital.examDate || '' 
       });
+      setEditalSubjects(edital.subjects || []);
     } else {
       setEditingEdital(null);
       setEditalForm({ name: '', organization: '', examDate: '' });
+      setEditalSubjects([]);
     }
     setIsEditalModalOpen(true);
+  };
+
+  const handleAddSubject = () => {
+    if (!newSubjectName.trim()) return;
+    
+    // Suporte a múltiplas disciplinas (vírgula ou nova linha)
+    const names = newSubjectName.split(/\n|,/).map(n => n.trim()).filter(n => n.length > 0);
+    const colors = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#3b82f6'];
+    
+    const newSubs: Subject[] = names.map((name, idx) => ({
+      id: `sub-${Date.now()}-${idx}`,
+      name: name,
+      topics: [],
+      color: colors[(editalSubjects.length + idx) % colors.length]
+    }));
+
+    setEditalSubjects([...editalSubjects, ...newSubs]);
+    setNewSubjectName('');
+    if (newSubs.length === 1) setExpandedSubjectId(newSubs[0].id);
+  };
+
+  const handleRemoveSubject = (id: string) => {
+    setEditalSubjects(editalSubjects.filter(s => s.id !== id));
+  };
+
+  const handleAddTopic = (subjectId: string) => {
+    if (!newTopicTitle.trim()) return;
+    
+    // Lógica de Importação Ultra-Inteligente com Proteção de Leis e Dados
+    // 1. Normalizamos separadores de lista comuns (removido ponto e vírgula conforme solicitado)
+    const rawText = newTopicTitle.replace(/•/g, '\n');
+    
+    // 2. Segmentamos por quebra de linha OU por espaço que precede uma numeração clara.
+    // CRITICAL: Para evitar quebrar leis (ex: 12.527/2011), exigimos que o número 
+    // seja seguido por um separador (. ou - ou )) E um espaço obrigatório (\s+).
+    const segments = rawText.split(/\n|(?:\s+(?=\d+(?:\.\d+)*[\.\-\)]\s+))/);
+    
+    const lines = segments
+      .map(l => l.trim()) 
+      .filter(l => l.length > 1); // Ignora fragmentos vazios
+    
+    const newTopics: Topic[] = lines.map((line, index) => ({
+      id: `topic-${Date.now()}-${index}`,
+      title: line,
+      completed: false,
+      importance: 3
+    }));
+
+    setEditalSubjects(editalSubjects.map(s => 
+      s.id === subjectId ? { ...s, topics: [...s.topics, ...newTopics] } : s
+    ));
+    setNewTopicTitle('');
+  };
+
+  const handleRemoveTopic = (subjectId: string, topicId: string) => {
+    setEditalSubjects(editalSubjects.map(s => 
+      s.id === subjectId ? { ...s, topics: s.topics.filter(t => t.id !== topicId) } : s
+    ));
   };
 
   const handleSaveEdital = async () => {
@@ -89,7 +153,7 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
       name: editalForm.name,
       organization: editalForm.organization,
       exam_date: editalForm.examDate,
-      subjects: editingEdital ? editingEdital.subjects : [], // Mantém matérias se for edição
+      subjects: editalSubjects,
       last_updated: new Date().toISOString(),
       created_by: user.id
     };
@@ -335,20 +399,126 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
                 </div>
              </div>
 
-             <div className="space-y-6">
-                <div className="space-y-2">
-                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">NOME DO CONCURSO</label>
-                   <input type="text" className="w-full px-6 py-4 bg-black/40 border border-white/5 rounded-2xl outline-none focus:border-indigo-500 text-white font-bold" placeholder="EX: POLÍCIA FEDERAL 2024" value={editalForm.name} onChange={e => setEditalForm({...editalForm, name: e.target.value})} />
+              <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-4 custom-scrollbar">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">NOME DO CONCURSO</label>
+                    <input type="text" className="w-full px-6 py-4 bg-black/40 border border-white/5 rounded-2xl outline-none focus:border-indigo-500 text-white font-bold" placeholder="EX: POLÍCIA FEDERAL 2024" value={editalForm.name} onChange={e => setEditalForm({...editalForm, name: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">ÓRGÃO / BANCA</label>
+                    <input type="text" className="w-full px-6 py-4 bg-black/40 border border-white/5 rounded-2xl outline-none focus:border-indigo-500 text-white font-bold" placeholder="EX: PF / CEBRASPE" value={editalForm.organization} onChange={e => setEditalForm({...editalForm, organization: e.target.value})} />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">ÓRGÃO / BANCA</label>
-                   <input type="text" className="w-full px-6 py-4 bg-black/40 border border-white/5 rounded-2xl outline-none focus:border-indigo-500 text-white font-bold" placeholder="EX: PF / CEBRASPE" value={editalForm.organization} onChange={e => setEditalForm({...editalForm, organization: e.target.value})} />
-                </div>
+                
                 <div className="space-y-2">
                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">DATA DA PROVA (OPCIONAL)</label>
                    <input type="date" className="w-full px-6 py-4 bg-black/40 border border-white/5 rounded-2xl outline-none focus:border-indigo-500 text-white font-bold" value={editalForm.examDate} onChange={e => setEditalForm({...editalForm, examDate: e.target.value})} />
                 </div>
-             </div>
+
+                <div className="pt-6 border-t border-white/5">
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-xs font-black text-white uppercase tracking-widest">DISCIPLINAS DA MATRIZ</h4>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase">{editalSubjects.length} MATÉRIAS</span>
+                  </div>
+
+                  <div className="flex gap-2 mb-6">
+                    <div className="flex-1 relative">
+                      <textarea 
+                        placeholder="NOME DA DISCIPLINA (OU COLE VÁRIAS SEPARADAS POR VÍRGULA)..." 
+                        className="w-full px-6 py-4 bg-black/40 border border-white/5 rounded-2xl outline-none focus:border-indigo-500 text-white font-bold text-[10px] uppercase resize-none h-[58px] custom-scrollbar"
+                        value={newSubjectName}
+                        onChange={e => setNewSubjectName(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            handleAddSubject();
+                          }
+                        }}
+                      />
+                    </div>
+                    <button 
+                      onClick={handleAddSubject}
+                      className="h-[58px] px-6 bg-indigo-600 text-white rounded-2xl hover:bg-indigo-500 transition-all flex items-center justify-center shadow-lg shadow-indigo-500/20"
+                    >
+                      <Plus size={20} />
+                    </button>
+                  </div>
+
+                  <div className="space-y-3">
+                    {editalSubjects.map(sub => (
+                      <div key={sub.id} className="bg-white/5 rounded-2xl border border-white/5 overflow-hidden">
+                        <div 
+                          className="p-4 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-colors"
+                          onClick={() => setExpandedSubjectId(expandedSubjectId === sub.id ? null : sub.id)}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-1 h-6 rounded-full" style={{ backgroundColor: sub.color }} />
+                            <span className="text-[10px] font-black text-white uppercase tracking-tight">{sub.name}</span>
+                            <span className="text-[8px] font-bold text-slate-500 uppercase">({sub.topics.length} tópicos)</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); handleRemoveSubject(sub.id); }}
+                              className="p-2 text-slate-500 hover:text-rose-500 transition-colors"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {expandedSubjectId === sub.id && (
+                          <div className="p-4 bg-black/20 border-t border-white/5 space-y-4">
+                            <div className="flex flex-col gap-2">
+                              <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                                ADICIONAR TÓPICOS (COLE DA PLANILHA)
+                              </label>
+                              
+                              <div className="flex gap-2">
+                                <textarea 
+                                  placeholder="COLE OS TÓPICOS (1 POR LINHA OU SEPARADOS POR PONTO E VÍRGULA)..." 
+                                  className="flex-1 px-4 py-3 bg-black/40 border border-white/5 rounded-xl outline-none focus:border-indigo-500 text-white font-bold text-[9px] uppercase min-h-[80px] resize-none custom-scrollbar"
+                                  value={newTopicTitle}
+                                  onChange={e => setNewTopicTitle(e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                      e.preventDefault();
+                                      handleAddTopic(sub.id);
+                                    }
+                                  }}
+                                />
+                                <button 
+                                  onClick={() => handleAddTopic(sub.id)}
+                                  className="px-4 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 transition-all flex items-center justify-center shadow-lg shadow-indigo-500/20"
+                                >
+                                  <Plus size={16} />
+                                </button>
+                              </div>
+                              <p className="text-[7px] text-slate-600 font-bold uppercase tracking-tight ml-1">
+                                Dica: O sistema limpa automaticamente numerações (1., 01-, etc) e separa por linhas.
+                              </p>
+                            </div>
+
+                            <div className="space-y-2">
+                              {sub.topics.map(topic => (
+                                <div key={topic.id} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5">
+                                  <span className="text-[9px] font-bold text-slate-300 uppercase tracking-wide">{topic.title}</span>
+                                  <button 
+                                    onClick={() => handleRemoveTopic(sub.id, topic.id)}
+                                    className="text-slate-600 hover:text-rose-500 transition-colors"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
 
              <button 
                onClick={handleSaveEdital} 
