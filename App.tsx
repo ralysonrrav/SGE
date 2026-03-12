@@ -494,6 +494,145 @@ const App: React.FC = () => {
     }
   };
 
+  const handleUpdateProfile = async (updatedUser: User & { password?: string }) => {
+    if (!user || !supabase) return;
+
+    try {
+      setIsCreatingMatrix(true); // Usar loader visual
+
+      // 1. Atualizar dados no Supabase Auth se necessário (Senha ou E-mail)
+      if (updatedUser.password || updatedUser.email !== user.email) {
+        const updateData: any = {};
+        if (updatedUser.password) updateData.password = updatedUser.password;
+        if (updatedUser.email !== user.email) updateData.email = updatedUser.email;
+
+        const { error: authError } = await supabase.auth.updateUser(updateData);
+        if (authError) throw authError;
+      }
+
+      // 2. Atualizar dados na tabela profiles (Nome e E-mail)
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          name: updatedUser.name,
+          email: updatedUser.email,
+        })
+        .eq('id', user.id);
+
+      if (profileError) throw profileError;
+
+      // 3. Atualizar estado local
+      setUser(prev => prev ? { ...prev, name: updatedUser.name, email: updatedUser.email } : null);
+      // O alerta de sucesso já existe no componente Profile.tsx
+    } catch (e: any) {
+      console.error("[Profile] Erro ao atualizar perfil:", e);
+      alert(`Erro ao atualizar perfil: ${e.message || 'Verifique sua conexão'}`);
+    } finally {
+      setIsCreatingMatrix(false);
+    }
+  };
+
+  const handleExportData = () => {
+    if (!user) return;
+    const data = {
+      subjects,
+      mocks,
+      studyLogs: bottomStudyLogs,
+      cycle,
+      exportDate: new Date().toISOString(),
+      userId: user.id,
+      matrixId: activeMatrixId
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `kronos-backup-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportData = async (file: File) => {
+    if (!user || !supabase || !activeMatrixId) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      
+      // Validação básica
+      if (!data.subjects && !data.studyLogs) {
+        throw new Error("Formato de arquivo inválido.");
+      }
+
+      setIsCreatingMatrix(true);
+
+      // 1. Limpar dados atuais da matriz ativa
+      await Promise.all([
+        supabase.from('subjects').delete().eq('matrix_id', activeMatrixId),
+        supabase.from('study_logs').delete().eq('matrix_id', activeMatrixId),
+        supabase.from('mocks').delete().eq('matrix_id', activeMatrixId),
+        supabase.from('study_cycles').delete().eq('matrix_id', activeMatrixId)
+      ]);
+
+      // 2. Inserir novos dados (se existirem)
+      const promises = [];
+
+      if (data.subjects && data.subjects.length > 0) {
+        promises.push(supabase.from('subjects').insert(data.subjects.map((s: any) => ({
+          user_id: user.id,
+          matrix_id: activeMatrixId,
+          name: s.name,
+          color: s.color,
+          topics: s.topics
+        }))));
+      }
+
+      if (data.studyLogs && data.studyLogs.length > 0) {
+        promises.push(supabase.from('study_logs').insert(data.studyLogs.map((l: any) => ({
+          user_id: user.id,
+          matrix_id: activeMatrixId,
+          subject_id: l.subject_id, // Nota: IDs podem mudar, idealmente mapearíamos
+          topic_id: l.topic_id,
+          minutes: l.minutes,
+          questions_attempted: l.questions_attempted,
+          questions_correct: l.questions_correct,
+          date: l.date,
+          notes: l.notes
+        }))));
+      }
+
+      if (data.mocks && data.mocks.length > 0) {
+        promises.push(supabase.from('mocks').insert(data.mocks.map((m: any) => ({
+          user_id: user.id,
+          matrix_id: activeMatrixId,
+          name: m.name,
+          date: m.date,
+          total_questions: m.total_questions,
+          score: m.score,
+          time_taken: m.time_taken
+        }))));
+      }
+
+      if (data.cycle) {
+        promises.push(supabase.from('study_cycles').insert({
+          user_id: user.id,
+          matrix_id: activeMatrixId,
+          name: data.cycle.name,
+          subjects: data.cycle.subjects,
+          current_index: data.cycle.current_index
+        }));
+      }
+
+      await Promise.all(promises);
+      await fetchData(user.id, user.role, activeMatrixId);
+      alert("Dataset restaurado com sucesso!");
+    } catch (e: any) {
+      console.error("[Import] Erro:", e);
+      alert(`Falha ao restaurar dataset: ${e.message || 'Verifique o formato do arquivo'}`);
+    } finally {
+      setIsCreatingMatrix(false);
+    }
+  };
+
   const handleLogout = async () => {
     loggingOutRef.current = true;
     setIsLoggingOut(true);
@@ -640,7 +779,16 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      {isProfileOpen && <Profile user={user} onUpdate={()=>{}} onDelete={handleLogout} onClose={() => setIsProfileOpen(false)} onExport={()=>{}} onImport={()=>{}} />}
+      {isProfileOpen && (
+        <Profile 
+          user={user} 
+          onUpdate={handleUpdateProfile} 
+          onDelete={handleLogout} 
+          onClose={() => setIsProfileOpen(false)} 
+          onExport={handleExportData} 
+          onImport={handleImportData} 
+        />
+      )}
 
       {/* Modal de Gestão de Ambientes (Hub) */}
       {isCreateMatrixOpen && (
