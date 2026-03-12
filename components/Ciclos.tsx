@@ -15,9 +15,10 @@ interface CiclosProps {
   subjects: Subject[];
   cycle: StudyCycle | null;
   setCycle: (cycle: StudyCycle | null) => void;
+  activeMatrixId: string | null;
 }
 
-const Ciclos: React.FC<CiclosProps> = ({ user, subjects, cycle, setCycle }) => {
+const Ciclos: React.FC<CiclosProps> = ({ user, subjects, cycle, setCycle, activeMatrixId }) => {
   const [configSubjects, setConfigSubjects] = useState<CycleSubject[]>([]);
   const [disciplinasPorCiclo, setDisciplinasPorCiclo] = useState(3);
   const [hoursPerDay, setHoursPerDay] = useState(4); 
@@ -82,6 +83,7 @@ const Ciclos: React.FC<CiclosProps> = ({ user, subjects, cycle, setCycle }) => {
 
       const payload = {
         user_id: user.id, // Vínculo de segurança obrigatório
+        matrix_id: activeMatrixId,
         board: updates.board || cycle?.board || 'Personalizado',
         exam_date: updates.exam_date || cycle?.examDate || user.examDate || new Date().toISOString().split('T')[0],
         hours_per_day: updates.hours_per_day !== undefined ? updates.hours_per_day : hoursPerDay,
