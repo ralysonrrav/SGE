@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   LayoutDashboard, BookOpen, RefreshCcw, BarChart2, LogOut, Menu,
-  BrainCircuit, Users, Settings, Loader2, Lock, ShieldCheck, Calendar, Timer, Clock,
+  BrainCircuit, Users, Settings, Settings2, Loader2, Lock, ShieldCheck, Calendar, Timer, Clock,
   Layers, Plus, Trash2, X, Database, DownloadCloud
 } from 'lucide-react';
 import { User, Subject, MockExam, StudyCycle, StudySession, PredefinedEdital, Matrix } from './types';
@@ -74,6 +74,7 @@ const App: React.FC = () => {
   const [isCreatingMatrix, setIsCreatingMatrix] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const loggingOutRef = useRef(false);
+  const isInitializingRef = useRef(false);
 
   // Relógio Digital em Tempo Real
   useEffect(() => {
@@ -93,33 +94,24 @@ const App: React.FC = () => {
       setMocks([]);
       setStudyLogs([]);
 
-      // 1. Buscar Matrizes primeiro
+      // 1. Buscar Matrizes (Ordenadas por criação para identificar a original)
       let currentMatrixId = matrixId;
-      const { data: matrixData, error: mError } = await supabase.from('matrices').select('*').eq('user_id', userId);
+      const { data: matrixData, error: mError } = await supabase
+        .from('matrices')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: true });
       
       if (mError) {
         console.error("[Matrix] Erro ao buscar matrizes:", mError);
       }
 
-      let finalMatrices = matrixData || [];
-      
-      // Se não houver matrizes, criar a primeira automaticamente
-      if (finalMatrices.length === 0) {
-        console.log("[Matrix] Criando matriz inicial...");
-        const { data: newMatrix } = await supabase.from('matrices').insert({
-          user_id: userId,
-          name: 'Matriz Principal',
-          is_active: true
-        }).select().single();
-        
-        if (newMatrix) {
-          finalMatrices = [newMatrix];
-          currentMatrixId = newMatrix.id;
-        }
-      }
-
+      const finalMatrices = matrixData || [];
       setMatrices(finalMatrices);
       
+      const firstMatrixId = finalMatrices[0]?.id;
+      const mainMatrixId = finalMatrices.find(m => m.name.toLowerCase().includes('principal'))?.id;
+
       if (!currentMatrixId && finalMatrices.length > 0) {
         const active = finalMatrices.find(m => m.is_active) || finalMatrices[0];
         currentMatrixId = active.id;
@@ -127,50 +119,75 @@ const App: React.FC = () => {
       
       setActiveMatrixId(currentMatrixId);
 
-      // 2. Definir Filtro de Busca
-      // Se tivermos uma matriz, buscamos dados dela OU dados que ainda não tem matriz (NULL)
-      // Isso garante que dados antigos apareçam até serem migrados
-      const { data: subRes } = await supabase.from('subjects').select('*').eq('user_id', userId);
-      const { data: logRes } = await supabase.from('study_logs').select('*').eq('user_id', userId).order('date', { ascending: false });
-      const { data: mockRes } = await supabase.from('mocks').select('*').eq('user_id', userId).order('date', { ascending: false });
-      const { data: cycleRes } = await supabase.from('study_cycles').select('*').eq('user_id', userId).order('created_at', { ascending: false });
-      const { data: editalRes } = await supabase.from('predefined_editais').select('*');
-      const { data: profileRes } = await supabase.from('profiles').select('*').eq('id', userId).single();
+      // Se não houver matrizes, paramos aqui
+      if (!currentMatrixId) {
+        setSubjects([]);
+        setStudyLogs([]);
+        setMocks([]);
+        setCycle(null);
+        return;
+      }
 
-      // Filtragem no Lado do Cliente para garantir que dados NULL apareçam na matriz ativa
-      const filterByMatrix = (items: any[]) => {
-        if (!currentMatrixId) return items;
-        return items.filter(item => !item.matrix_id || item.matrix_id === currentMatrixId);
+      // 2. Busca de Dados (Com suporte a dados legados na matriz original ou principal)
+      const [subRes, logRes, mockRes, cycleRes, editalRes, profileRes] = await Promise.all([
+        supabase.from('subjects').select('*').eq('user_id', userId),
+        supabase.from('study_logs').select('*').eq('user_id', userId).order('date', { ascending: false }),
+        supabase.from('mocks').select('*').eq('user_id', userId).order('date', { ascending: false }),
+        supabase.from('study_cycles').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+        supabase.from('predefined_editais').select('*'),
+        supabase.from('profiles').select('*').eq('id', userId).single()
+      ]);
+
+      // Função de filtragem: 
+      // Se for a Matriz Principal, mostra TUDO do usuário (Visão Global)
+      // Se for outra matriz, mostra apenas o que pertence a ela
+      const filterLegacy = (items: any[]) => {
+        const isMainMatrix = currentMatrixId === mainMatrixId || (finalMatrices.find(m => m.id === currentMatrixId)?.name.toLowerCase().includes('principal'));
+        
+        if (isMainMatrix) {
+          return items; // Visão total para a matriz principal
+        }
+        
+        return items.filter(item => 
+          item.matrix_id === currentMatrixId || 
+          (!item.matrix_id && currentMatrixId === firstMatrixId)
+        );
       };
 
-      if (subRes) {
-        const filteredSubs = filterByMatrix(subRes);
-        setSubjects(filteredSubs.map(s => ({
+      if (subRes.data) {
+        const filtered = filterLegacy(subRes.data);
+        setSubjects(filtered.map(s => ({
           ...s,
           id: String(s.id),
           topics: typeof s.topics === 'string' ? JSON.parse(s.topics) : (s.topics || [])
         })));
+      } else {
+        setSubjects([]);
       }
 
-      if (logRes) {
-        const filteredLogs = filterByMatrix(logRes);
-        setStudyLogs(filteredLogs.map(l => ({ 
+      if (logRes.data) {
+        const filtered = filterLegacy(logRes.data);
+        setStudyLogs(filtered.map(l => ({ 
           ...l, 
           id: String(l.id), 
           topicId: l.topic_id, 
           subjectId: String(l.subject_id) 
         })));
+      } else {
+        setStudyLogs([]);
       }
 
-      if (mockRes) {
-        const filteredMocks = filterByMatrix(mockRes);
-        setMocks(filteredMocks.map(m => ({ ...m, id: String(m.id), totalQuestions: m.total_questions, subjectPerformance: m.subject_performance || {} })));
+      if (mockRes.data) {
+        const filtered = filterLegacy(mockRes.data);
+        setMocks(filtered.map(m => ({ ...m, id: String(m.id), totalQuestions: m.total_questions, subjectPerformance: m.subject_performance || {} })));
+      } else {
+        setMocks([]);
       }
       
-      if (cycleRes?.[0]) {
-        const filteredCycles = filterByMatrix(cycleRes);
-        if (filteredCycles.length > 0) {
-          setCycle({ ...filteredCycles[0], id: String(filteredCycles[0].id) });
+      if (cycleRes.data) {
+        const filtered = filterLegacy(cycleRes.data);
+        if (filtered.length > 0) {
+          setCycle({ ...filtered[0], id: String(filtered[0].id) });
         } else {
           setCycle(null);
         }
@@ -178,8 +195,8 @@ const App: React.FC = () => {
         setCycle(null);
       }
 
-      if (editalRes) {
-        setEditais(editalRes.map(e => {
+      if (editalRes.data) {
+        setEditais(editalRes.data.map(e => {
           const rawSubjects = typeof e.subjects === 'string' ? JSON.parse(e.subjects) : (e.subjects || []);
           const parsedSubjects = rawSubjects.map((s: any) => ({
             ...s,
@@ -196,19 +213,19 @@ const App: React.FC = () => {
         }));
       }
 
-      if (profileRes) {
+      if (profileRes.data) {
         const activeMatrix = finalMatrices.find(m => m.id === currentMatrixId);
         setUser(prev => prev ? { 
           ...prev, 
-          examDate: activeMatrix?.exam_date || profileRes.exam_date, 
-          weeklyGoal: activeMatrix?.weekly_goal || profileRes.weekly_goal || 20,
-          activeMatrixId: profileRes.active_matrix_id
+          examDate: activeMatrix?.exam_date || profileRes.data.exam_date, 
+          weeklyGoal: activeMatrix?.weekly_goal || profileRes.data.weekly_goal || 20,
+          activeMatrixId: profileRes.data.active_matrix_id
         } : null);
 
-        if (!currentMatrixId && profileRes.active_matrix_id) {
-          setActiveMatrixId(profileRes.active_matrix_id);
+        if (!currentMatrixId && profileRes.data.active_matrix_id) {
+          setActiveMatrixId(profileRes.data.active_matrix_id);
           // Recarregar com a matriz correta se necessário
-          fetchData(userId, role, profileRes.active_matrix_id);
+          fetchData(userId, role, profileRes.data.active_matrix_id);
           return;
         }
       }
@@ -313,23 +330,37 @@ const App: React.FC = () => {
     if (!user || !supabase || !name.trim()) return;
     setIsCreatingMatrix(true);
     try {
+      console.log("[Matrix] Criando ambiente personalizado:", name);
       const { data, error } = await supabase.from('matrices').insert({
         user_id: user.id,
         name: name.trim(),
         is_active: true
       }).select().single();
 
-      if (error) throw error;
+      if (error) {
+        console.error("[Matrix] Erro ao inserir na tabela matrices:", error);
+        throw error;
+      }
+
       if (data) {
-        await supabase.from('matrices').update({ is_active: false }).eq('user_id', user.id).neq('id', data.id);
-        await supabase.from('profiles').update({ active_matrix_id: data.id }).eq('id', user.id);
+        // Desativar outras e atualizar perfil
+        await Promise.all([
+          supabase.from('matrices').update({ is_active: false }).eq('user_id', user.id).neq('id', data.id),
+          supabase.from('profiles').update({ active_matrix_id: data.id }).eq('id', user.id)
+        ]);
+
         setIsCreateMatrixOpen(false);
         setNewMatrixName('');
-        fetchData(user.id, user.role, data.id);
+        await fetchData(user.id, user.role, data.id);
+        console.log("[Matrix] Ambiente personalizado criado com sucesso.");
       }
-    } catch (e) {
-      console.error("[Matrix] Erro ao criar matriz:", e);
-      alert("Erro ao criar ambiente. Verifique a conexão.");
+    } catch (e: any) {
+      console.error("[Matrix] Erro fatal ao criar ambiente:", e);
+      if (e.message?.includes('permission denied')) {
+        alert("ERRO DE PERMISSÃO: Você não tem autorização para criar novos ambientes. Por favor, execute o script SQL de permissões no Supabase.");
+      } else {
+        alert(`Erro ao criar ambiente: ${e.message || 'Verifique sua conexão'}`);
+      }
     } finally {
       setIsCreatingMatrix(false);
     }
@@ -393,7 +424,71 @@ const App: React.FC = () => {
       }
     } catch (e: any) {
       console.error("[Matrix] Erro fatal ao criar do modelo:", e);
-      alert(`Erro ao importar modelo: ${e.message || 'Erro desconhecido'}`);
+      if (e.message?.includes('permission denied')) {
+        alert("ERRO DE PERMISSÃO: O banco de dados bloqueou a criação do ambiente. Por favor, execute o script SQL de permissões no Supabase para liberar o acesso.");
+      } else {
+        alert(`Erro ao importar modelo: ${e.message || 'Erro desconhecido'}`);
+      }
+    } finally {
+      setIsCreatingMatrix(false);
+    }
+  };
+
+  const handleDeleteMatrix = async (id: string) => {
+    if (!user || !supabase || matrices.length <= 1) {
+      alert("Não é possível excluir o único ambiente ativo.");
+      return;
+    }
+    
+    // Removido window.confirm pois é bloqueado em iframes
+    // A exclusão será direta para garantir funcionalidade imediata
+    try {
+      setIsCreatingMatrix(true); // Reutilizando estado de loading
+      const { error } = await supabase.from('matrices').delete().eq('id', id);
+      if (error) throw error;
+
+      if (id === activeMatrixId) {
+        const nextMatrix = matrices.find(m => m.id !== id);
+        if (nextMatrix) {
+          await handleSwitchMatrix(nextMatrix.id);
+        }
+      } else {
+        setMatrices(prev => prev.filter(m => m.id !== id));
+        // Recarregar dados para garantir que a regra de 'firstMatrixId' seja reavaliada
+        fetchData(user.id, user.role, activeMatrixId);
+      }
+    } catch (e: any) {
+      console.error("[Matrix] Erro ao excluir ambiente:", e);
+      // Usando console.error em vez de alert para evitar bloqueios de iframe
+    } finally {
+      setIsCreatingMatrix(false);
+    }
+  };
+
+  const handleRescueData = async () => {
+    if (!user || !supabase || !activeMatrixId) return;
+    setIsCreatingMatrix(true);
+    try {
+      console.log("[Rescue] Iniciando resgate TOTAL de dados para a matriz:", activeMatrixId);
+      
+      // Resgate agressivo: Vincula TUDO do usuário que não seja da matriz atual para a matriz atual
+      // Isso resolve o problema de dados "presos" em matrizes deletadas ou duplicadas
+      const results = await Promise.all([
+        supabase.from('subjects').update({ matrix_id: activeMatrixId }).eq('user_id', user.id),
+        supabase.from('study_logs').update({ matrix_id: activeMatrixId }).eq('user_id', user.id),
+        supabase.from('mocks').update({ matrix_id: activeMatrixId }).eq('user_id', user.id),
+        supabase.from('study_cycles').update({ matrix_id: activeMatrixId }).eq('user_id', user.id)
+      ]);
+
+      const hasError = results.some(r => r.error);
+      if (hasError) {
+        console.error("[Rescue] Erros no resgate total:", results.map(r => r.error));
+      }
+
+      await fetchData(user.id, user.role, activeMatrixId);
+      alert("Resgate concluído! Todo o seu progresso foi consolidado neste ambiente.");
+    } catch (e: any) {
+      console.error("[Rescue] Erro fatal:", e);
     } finally {
       setIsCreatingMatrix(false);
     }
@@ -457,43 +552,27 @@ const App: React.FC = () => {
             <h1 className="text-xl font-black text-white tracking-widest kronos-gradient">KRONOS</h1>
           </div>
 
-          {/* Workspace Switcher - Redesenhado */}
-          <div className="px-4 mb-8">
-            <div className="bg-black/40 border border-white/10 rounded-2xl p-4 shadow-2xl">
-              <div className="flex items-center justify-between mb-4 px-1">
+          {/* Workspace Switcher - Compacto e Discreto */}
+          <div className="px-4 mb-6">
+            <button 
+              onClick={() => setIsCreateMatrixOpen(true)}
+              className="w-full group bg-black/40 border border-white/10 rounded-2xl p-3 hover:border-indigo-500/50 transition-all text-left shadow-xl"
+            >
+              <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse shadow-[0_0_8px_rgba(99,102,241,0.8)]"></div>
-                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Ambiente Ativo</span>
+                  <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></div>
+                  <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Foco Atual</span>
                 </div>
-                <button 
-                  onClick={() => setIsCreateMatrixOpen(true)}
-                  className="p-1.5 hover:bg-indigo-500/20 rounded-lg text-indigo-400 transition-all hover:scale-110 border border-white/5"
-                  title="Novo Ambiente"
-                >
-                  <Plus size={14} />
-                </button>
+                <Settings2 size={12} className="text-slate-600 group-hover:text-indigo-400 transition-colors" />
               </div>
               
-              <div className="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar pr-1">
-                {matrices.map(m => (
-                  <button 
-                    key={m.id} 
-                    onClick={() => handleSwitchMatrix(m.id)}
-                    className={`w-full group flex items-center justify-between px-3 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-tight transition-all border ${
-                      activeMatrixId === m.id 
-                        ? 'bg-indigo-600/20 border-indigo-500/50 text-white shadow-[0_0_15px_rgba(99,102,241,0.1)]' 
-                        : 'text-slate-500 hover:text-slate-300 hover:bg-white/5 border-transparent'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 truncate">
-                      <Layers size={12} className={activeMatrixId === m.id ? "text-indigo-400" : "text-slate-600 group-hover:text-slate-400"} />
-                      <span className="truncate">{m.name}</span>
-                    </div>
-                    {activeMatrixId === m.id && <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.8)]"></div>}
-                  </button>
-                ))}
+              <div className="flex items-center gap-2">
+                <Layers size={14} className="text-indigo-400 shrink-0" />
+                <span className="text-[10px] font-black text-white uppercase tracking-tight truncate">
+                  {matrices.find(m => m.id === activeMatrixId)?.name || 'Selecionar...'}
+                </span>
               </div>
-            </div>
+            </button>
           </div>
 
           <nav className="flex-1 px-4 space-y-1">
@@ -607,24 +686,45 @@ const App: React.FC = () => {
                 </section>
 
                 <section>
-                  <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-4 ml-1">Meus Ambientes Ativos</h4>
+                  <div className="flex items-center justify-between mb-4 ml-1">
+                    <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">Meus Ambientes Ativos</h4>
+                    <button 
+                      onClick={handleRescueData}
+                      disabled={isCreatingMatrix}
+                      className="flex items-center gap-2 text-[9px] font-black text-indigo-400 hover:text-indigo-300 uppercase tracking-widest transition-all"
+                      title="Vincular dados antigos (sem ambiente) a este ambiente atual"
+                    >
+                      <RefreshCcw size={12} className={isCreatingMatrix ? "animate-spin" : ""} />
+                      Resgatar Dados Antigos
+                    </button>
+                  </div>
                   <div className="grid grid-cols-1 gap-2">
                     {matrices.map(m => (
-                      <button 
-                        key={m.id} 
-                        onClick={() => { handleSwitchMatrix(m.id); setIsCreateMatrixOpen(false); }}
-                        className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${
-                          activeMatrixId === m.id 
-                            ? 'bg-indigo-600/20 border-indigo-500/50 text-white' 
-                            : 'bg-white/5 border-transparent text-slate-400 hover:text-white hover:bg-white/10'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <Layers size={14} className={activeMatrixId === m.id ? "text-indigo-400" : "text-slate-600"} />
-                          <span className="text-[11px] font-black uppercase tracking-tight">{m.name}</span>
-                        </div>
-                        {activeMatrixId === m.id && <ShieldCheck size={14} className="text-indigo-500" />}
-                      </button>
+                      <div key={m.id} className="flex items-center gap-2">
+                        <button 
+                          onClick={() => { handleSwitchMatrix(m.id); setIsCreateMatrixOpen(false); }}
+                          className={`flex-1 flex items-center justify-between p-4 rounded-2xl border transition-all ${
+                            activeMatrixId === m.id 
+                              ? 'bg-indigo-600/20 border-indigo-500/50 text-white' 
+                              : 'bg-white/5 border-transparent text-slate-400 hover:text-white hover:bg-white/10'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Layers size={14} className={activeMatrixId === m.id ? "text-indigo-400" : "text-slate-600"} />
+                            <span className="text-[11px] font-black uppercase tracking-tight">{m.name}</span>
+                          </div>
+                          {activeMatrixId === m.id && <ShieldCheck size={14} className="text-indigo-500" />}
+                        </button>
+                        {matrices.length > 1 && (
+                          <button 
+                            onClick={() => handleDeleteMatrix(m.id)}
+                            className="p-4 bg-rose-500/10 text-rose-500 rounded-2xl hover:bg-rose-500 hover:text-white transition-all"
+                            title="Excluir Ambiente"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
                     ))}
                   </div>
                 </section>
