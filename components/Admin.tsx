@@ -1,12 +1,12 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { User, PredefinedEdital, Subject, Topic } from '../types';
 import { supabase } from '../lib/supabase';
 import { 
   Trash2, Edit3, X, Save, Search, Loader2, 
   Plus, ShieldCheck, CheckCircle2, Ban,
   FileText, Database, Calendar, Layers, RefreshCw,
-  ShieldX
+  ShieldX, Clock, Timer
 } from 'lucide-react';
 
 interface AdminProps {
@@ -18,7 +18,7 @@ interface AdminProps {
   view: 'users' | 'editais';
 }
 
-const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditais, view }) => {
+const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditais, view: initialView }) => {
   // Verificação de segurança sênior
   if (user.role !== 'administrator' && (user.role as any) !== 'admin') {
     return (
@@ -29,6 +29,13 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
     );
   }
 
+  const [activeTab, setActiveTab] = useState<'users' | 'editais'>(
+    users.some(u => u.status === 'pending') ? 'users' : initialView
+  );
+
+  useEffect(() => {
+    refreshData();
+  }, [activeTab]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -37,8 +44,8 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editUserName, setEditUserName] = useState('');
-  const [editUserRole, setEditUserRole] = useState<'admin' | 'student' | 'visitor'>('student');
-  const [editUserStatus, setEditUserStatus] = useState<'active' | 'blocked' | 'suspended'>('active');
+  const [editUserRole, setEditUserRole] = useState<'administrator' | 'student' | 'mentor' | 'visitor'>('student');
+  const [editUserStatus, setEditUserStatus] = useState<'active' | 'blocked' | 'pending'>('active');
 
   // States para Editais
   const [isEditalModalOpen, setIsEditalModalOpen] = useState(false);
@@ -54,19 +61,78 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const [userToPurge, setUserToPurge] = useState<User | null>(null);
 
+  useEffect(() => {
+    if (editingUser) {
+      setEditUserName(editingUser.name || '');
+      setEditUserRole(editingUser.role as any);
+      setEditUserStatus(editingUser.status as any);
+    }
+  }, [editingUser]);
+
   const refreshData = async () => {
     if (!supabase) return;
     setIsRefreshing(true);
     try {
-      if (view === 'users') {
-        const { data } = await supabase.from('profiles').select('*').order('name');
-        if (data) setUsers(data.map(p => ({ ...p, id: String(p.id), lastAccess: p.last_seen })));
+      if (activeTab === 'users') {
+        const { data: profiles } = await supabase.from('profiles').select('*').order('name');
+        const { data: logs } = await supabase.from('study_logs').select('user_id, minutes');
+        
+        if (profiles) {
+          const usersWithProgress = profiles.map(p => {
+            const userLogs = logs?.filter(l => l.user_id === p.id) || [];
+            const totalMinutes = userLogs.reduce((acc, curr) => acc + curr.minutes, 0);
+            
+            // Forçar role de administrador para o e-mail mestre na lista
+            let finalRole = p.role;
+            if (p.email === 'ralysonriccelli@gmail.com') {
+              finalRole = 'administrator';
+            }
+
+            return { 
+              ...p, 
+              id: String(p.id), 
+              role: finalRole,
+              lastAccess: p.last_seen,
+              status: p.status || 'pending',
+              totalStudyTime: totalMinutes
+            };
+          });
+          setUsers(usersWithProgress);
+        }
       } else {
         const { data } = await supabase.from('predefined_editais').select('*').order('name');
         if (data) setEditais(data.map(e => ({ ...e, id: String(e.id), examDate: e.exam_date, lastUpdated: e.last_updated })));
       }
     } finally {
       setIsRefreshing(false);
+    }
+  };
+
+  const handleQuickStatusUpdate = async (userId: string, status: 'active' | 'blocked' | 'pending') => {
+    if (!supabase) return;
+    setLoadingId(userId);
+    try {
+      const { error } = await supabase.from('profiles').update({ status }).eq('id', userId);
+      if (error) throw error;
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, status } : u));
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
+  const handleQuickRoleUpdate = async (userId: string, role: string) => {
+    if (!supabase) return;
+    setLoadingId(userId);
+    try {
+      const { error } = await supabase.from('profiles').update({ role }).eq('id', userId);
+      if (error) throw error;
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: role as any } : u));
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setLoadingId(null);
     }
   };
 
@@ -211,14 +277,26 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
     try {
       const { error } = await supabase
         .from('profiles')
-        .update({ name: editUserName, role: editUserRole, status: editUserStatus })
+        .update({ 
+          name: editUserName, 
+          role: editUserRole, 
+          status: editUserStatus 
+        })
         .eq('id', editingUser.id);
 
       if (error) throw error;
-      setUsers(prev => prev.map(u => u.id === editingUser.id ? { ...u, name: editUserName, role: editUserRole as any, status: editUserStatus as any } : u));
+      
+      setUsers(prev => prev.map(u => u.id === editingUser.id ? { 
+        ...u, 
+        name: editUserName, 
+        role: editUserRole as any, 
+        status: editUserStatus as any 
+      } : u));
+      
       setIsUserModalOpen(false);
+      alert("Alterações salvas com sucesso!");
     } catch (e: any) {
-      alert(`Erro: ${e.message}`);
+      alert(`Erro ao salvar: ${e.message}`);
     } finally {
       setLoadingId(null);
     }
@@ -245,15 +323,31 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700 pb-20">
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-4">
         <div>
           <h2 className="text-4xl font-black text-white tracking-tighter uppercase leading-none">
-            {view === 'users' ? 'GOVERNANÇA' : 'CORE EDITAIS'}
+            GOVERNANÇA
           </h2>
           <p className="text-slate-500 font-bold mt-3 text-[10px] uppercase tracking-[0.4em]">
-            {view === 'users' ? 'Controle Central de Operadores' : 'Gestão de Matrizes de Certames'}
+            Painel de Controle Central do Ecossistema
           </p>
         </div>
+        
+        <div className="flex bg-white/5 p-1 rounded-2xl border border-white/5">
+          <button 
+            onClick={() => setActiveTab('users')}
+            className={`px-6 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${activeTab === 'users' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
+          >
+            OPERADORES {users.filter(u => u.status === 'pending').length > 0 && `(${users.filter(u => u.status === 'pending').length})`}
+          </button>
+          <button 
+            onClick={() => setActiveTab('editais')}
+            className={`px-6 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${activeTab === 'editais' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}
+          >
+            MATRIZES CORE
+          </button>
+        </div>
+
         <div className="flex gap-3">
           <div className="relative w-64">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={14}/>
@@ -262,7 +356,7 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
           <button onClick={refreshData} disabled={isRefreshing} className="p-4 bg-white/5 border border-white/5 text-indigo-400 rounded-2xl hover:bg-white/10 transition-all active:scale-95 disabled:opacity-50">
             <RefreshCw size={20} className={isRefreshing ? 'animate-spin' : ''} />
           </button>
-          {view === 'editais' && (
+          {activeTab === 'editais' && (
             <button 
               onClick={() => handleOpenEditalModal()}
               className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-500 transition-all shadow-xl"
@@ -271,9 +365,45 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
             </button>
           )}
         </div>
-      </header>
+      </div>
 
-      {view === 'users' ? (
+      {activeTab === 'users' ? (
+        <div className="space-y-8">
+          {/* DESTAQUE: USUÁRIOS AGUARDANDO APROVAÇÃO */}
+          {users.filter(u => u.status === 'pending').length > 0 && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 px-2">
+                <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></div>
+                <h3 className="text-[10px] font-black text-rose-500 uppercase tracking-[0.3em]">Aguardando Ativação Manual</h3>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {users.filter(u => u.status === 'pending').map(u => (
+                  <div key={u.id} className="glass-card p-8 rounded-[2.5rem] border border-rose-500/30 bg-rose-500/5 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                      <ShieldCheck size={80} />
+                    </div>
+                    <div className="flex items-center gap-4 mb-6">
+                      <div className="w-14 h-14 rounded-2xl bg-rose-500/20 text-rose-500 flex items-center justify-center font-black text-xl border border-rose-500/20">
+                        {u.name?.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-lg font-black text-white uppercase tracking-tight truncate">{u.name}</p>
+                        <p className="text-[9px] text-slate-500 font-bold truncate">{u.email}</p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => handleQuickStatusUpdate(u.id, 'active')}
+                      disabled={loadingId === u.id}
+                      className="w-full bg-emerald-600 text-white py-5 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-500 transition-all shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-3"
+                    >
+                      {loadingId === u.id ? <Loader2 size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+                      APROVAR ACESSO AGORA
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         <div className="glass-card rounded-[2.5rem] overflow-hidden border border-white/5 shadow-2xl">
           <table className="w-full text-left">
             <thead className="bg-white/5 border-b border-white/5">
@@ -296,17 +426,91 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
                       <div>
                         <p className="text-sm font-black text-white uppercase tracking-tight">{u.name}</p>
                         <p className="text-[9px] text-slate-600 font-bold lowercase mt-0.5">{u.email}</p>
-                        <p className="text-[7px] font-black text-slate-800 uppercase tracking-tighter mt-1">ID: {u.id.substring(0,8)}...</p>
+                        <div className="flex items-center gap-2 mt-2">
+                           <Clock size={10} className="text-slate-700" />
+                           <span className="text-[8px] font-black text-slate-700 uppercase tracking-tighter">
+                             {(u as any).totalStudyTime ? `${Math.floor((u as any).totalStudyTime / 60)}h ${(u as any).totalStudyTime % 60}m` : '0h 0m'}
+                           </span>
+                        </div>
                       </div>
                     </div>
                   </td>
                   <td className="px-10 py-6">
-                    <span className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase border tracking-widest ${u.role === 'administrator' || (u.role as any) === 'admin' ? 'bg-indigo-600/10 border-indigo-500/20 text-indigo-400' : 'bg-slate-500/10 border-slate-500/20 text-slate-400'}`}>
-                      {(u.role as any) === 'admin' || u.role === 'administrator' ? 'ADMIN' : u.role.toUpperCase()}
-                    </span>
+                    <select 
+                      value={u.role} 
+                      onChange={(e) => handleQuickRoleUpdate(u.id, e.target.value)}
+                      disabled={loadingId === u.id || u.id === user.id}
+                      className="bg-white/5 border border-white/5 rounded-lg text-[8px] font-black uppercase text-indigo-400 px-3 py-1.5 outline-none focus:border-indigo-500 transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      <option value="student">ESTUDANTE</option>
+                      <option value="mentor">MENTOR</option>
+                      <option value="administrator">ADMIN</option>
+                    </select>
                   </td>
                   <td className="px-10 py-6">
-                     <span className={`bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 px-3 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest flex items-center gap-2 w-fit`}><CheckCircle2 size={10}/> {u.status?.toUpperCase() || 'ATIVO'}</span>
+                     <div className="flex items-center gap-3">
+                        <span className={`px-3 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest flex items-center gap-2 border ${
+                          u.status === 'active' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' :
+                          u.status === 'pending' ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' :
+                          'bg-rose-500/10 border-rose-500/20 text-rose-500'
+                        }`}>
+                          {u.status === 'active' ? <CheckCircle2 size={10}/> : u.status === 'pending' ? <Timer size={10}/> : <Ban size={10}/>}
+                          {u.status?.toUpperCase() || 'ATIVO'}
+                        </span>
+                        
+                        {u.status === 'pending' && (
+                          <button 
+                            onClick={() => handleQuickStatusUpdate(u.id, 'active')}
+                            disabled={loadingId === u.id}
+                            className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-[8px] font-black uppercase hover:bg-emerald-500 transition-all shadow-lg shadow-emerald-900/20 flex items-center gap-2"
+                          >
+                            {loadingId === u.id ? <Loader2 size={10} className="animate-spin" /> : <ShieldCheck size={10} />}
+                            APROVAR AGORA
+                          </button>
+                        )}
+
+                        {u.status === 'active' && u.id !== user.id && (
+                          <div className="flex gap-2">
+                            <button 
+                              onClick={() => handleQuickStatusUpdate(u.id, 'blocked')}
+                              disabled={loadingId === u.id}
+                              className="p-2 bg-rose-500/20 text-rose-500 rounded-lg hover:bg-rose-500 hover:text-white transition-all"
+                              title="Bloquear Usuário"
+                            >
+                              <Ban size={14} />
+                            </button>
+                            <button 
+                              onClick={() => handleQuickStatusUpdate(u.id, 'pending')}
+                              disabled={loadingId === u.id}
+                              className="p-2 bg-amber-500/20 text-amber-500 rounded-lg hover:bg-amber-500 hover:text-white transition-all"
+                              title="Mover para Pendente"
+                            >
+                              <Timer size={14} />
+                            </button>
+                          </div>
+                        )}
+
+                        {u.status === 'blocked' && (
+                          <div className="flex gap-2">
+                            <button 
+                              onClick={() => handleQuickStatusUpdate(u.id, 'active')}
+                              disabled={loadingId === u.id}
+                              className="p-2 bg-indigo-500/20 text-indigo-500 rounded-lg hover:bg-indigo-500 hover:text-white transition-all"
+                              title="Desbloquear Usuário"
+                            >
+                              <RefreshCw size={14} />
+                            </button>
+                            <button 
+                              onClick={() => handleQuickStatusUpdate(u.id, 'pending')}
+                              disabled={loadingId === u.id}
+                              className="p-2 bg-amber-500/20 text-amber-500 rounded-lg hover:bg-amber-500 hover:text-white transition-all"
+                              title="Mover para Pendente"
+                            >
+                              <Timer size={14} />
+                            </button>
+                          </div>
+                        )}
+                     </div>
                   </td>
                   <td className="px-10 py-6">
                      <div className="flex items-center gap-2">
@@ -327,6 +531,7 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
             </tbody>
           </table>
         </div>
+      </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredEditais.map(edital => (
@@ -380,6 +585,60 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
                </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* MODAL DE EDIÇÃO DE USUÁRIO */}
+      {isUserModalOpen && editingUser && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-slate-950/95 backdrop-blur-2xl animate-in fade-in">
+          <div className="glass-card w-full max-w-md rounded-[3.5rem] p-12 border border-white/10 shadow-2xl relative">
+             <button onClick={() => { setIsUserModalOpen(false); setEditingUser(null); }} className="absolute top-8 right-8 text-slate-500 hover:text-white"><X size={24} /></button>
+             
+             <div className="flex items-center gap-4 mb-10">
+                <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-xl">
+                   <ShieldCheck size={24} />
+                </div>
+                <div>
+                   <h3 className="text-2xl font-black text-white uppercase tracking-tighter">GESTÃO DE PERFIL</h3>
+                   <p className="text-[9px] text-slate-500 font-black uppercase tracking-[0.4em]">Controle de Acesso</p>
+                </div>
+             </div>
+
+             <div className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">NOME DO OPERADOR</label>
+                  <input type="text" className="w-full px-6 py-4 bg-black/40 border border-white/5 rounded-2xl outline-none focus:border-indigo-500 text-white font-bold" value={editUserName} onChange={e => setEditUserName(e.target.value)} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">NÍVEL DE ACESSO</label>
+                    <select className="w-full px-6 py-4 bg-black/40 border border-white/5 rounded-2xl outline-none focus:border-indigo-500 text-white font-bold text-xs" value={editUserRole} onChange={e => setEditUserRole(e.target.value as any)}>
+                      <option value="student">ESTUDANTE</option>
+                      <option value="mentor">MENTOR</option>
+                      <option value="administrator">ADMIN</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">SITUAÇÃO</label>
+                    <select className="w-full px-6 py-4 bg-black/40 border border-white/5 rounded-2xl outline-none focus:border-indigo-500 text-white font-bold text-xs" value={editUserStatus} onChange={e => setEditUserStatus(e.target.value as any)}>
+                      <option value="active">ATIVO</option>
+                      <option value="pending">PENDENTE</option>
+                      <option value="blocked">BLOQUEADO</option>
+                    </select>
+                  </div>
+                </div>
+             </div>
+
+             <button 
+               onClick={handleSaveUser} 
+               disabled={loadingId === editingUser.id}
+               className="w-full bg-indigo-600 text-white p-6 rounded-[2rem] font-black text-[11px] uppercase tracking-widest hover:bg-indigo-500 transition-all shadow-xl mt-10 flex items-center justify-center gap-3"
+             >
+               {loadingId === editingUser.id ? <Loader2 size={16} className="animate-spin" /> : <Save size={16}/>}
+               SALVAR ALTERAÇÕES
+             </button>
+          </div>
         </div>
       )}
 
@@ -553,6 +812,32 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
                   DELETAR AGORA
                 </button>
                 <button onClick={() => setEditalToDelete(null)} className="py-4 text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] hover:text-white transition-colors">CANCELAR</button>
+             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE DELEÇÃO DE USUÁRIO (PURGA) */}
+      {showConfirmDelete && userToPurge && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-slate-950/95 backdrop-blur-2xl animate-in fade-in">
+          <div className="glass-card w-full max-w-md rounded-[3.5rem] p-12 border border-rose-500/30 text-center">
+             <div className="w-20 h-20 bg-rose-500/10 text-rose-500 rounded-[2.5rem] border border-rose-500/20 flex items-center justify-center mx-auto mb-8">
+                <ShieldX size={44} />
+             </div>
+             <h3 className="text-2xl font-black text-white uppercase tracking-tighter mb-4">EXPULSAR OPERADOR</h3>
+             <p className="text-slate-400 text-xs font-bold leading-relaxed uppercase tracking-wide mb-10">
+                Deseja remover permanentemente o acesso de <span className="text-white">"{userToPurge.name}"</span>? Esta ação é irreversível e apagará o perfil do banco de dados.
+             </p>
+             <div className="flex flex-col gap-4">
+                <button 
+                  onClick={handlePurgeUser} 
+                  disabled={loadingId === userToPurge.id}
+                  className="w-full bg-rose-600 text-white p-6 rounded-[2rem] font-black text-[11px] uppercase tracking-widest hover:bg-rose-500 transition-all shadow-xl flex items-center justify-center gap-3"
+                >
+                  {loadingId === userToPurge.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                  CONFIRMAR EXPULSÃO
+                </button>
+                <button onClick={() => { setShowConfirmDelete(false); setUserToPurge(null); }} className="py-4 text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] hover:text-white transition-colors">CANCELAR</button>
              </div>
           </div>
         </div>
