@@ -14,8 +14,8 @@ export interface User {
   name: string;
   email: string;
   password?: string;
-  role: 'administrator' | 'student' | 'visitor';
-  status: 'active' | 'blocked';
+  role: 'administrator' | 'student' | 'mentor' | 'visitor';
+  status: 'active' | 'blocked' | 'pending';
   isOnline: boolean;
   lastAccess?: string;
   weeklyGoal?: number;
