@@ -79,10 +79,26 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister }) => {
           email, password, options: { data: { full_name: name } }
         });
         if (signUpError) throw signUpError;
-        if (data.user && data.session) {
-           onRegister({ id: data.user.id, name: name || 'Usuário', email, role: 'student', status: 'active', isOnline: true });
-        } else {
-           setError({ msg: "Conta criada! Verifique seu e-mail para ativar.", type: 'success' });
+        if (data.user) {
+           // Criar perfil no banco de dados imediatamente
+           const { error: profileError } = await supabase.from('profiles').insert({
+             id: data.user.id,
+             name: name || 'Usuário',
+             email: email,
+             role: 'student',
+             status: 'pending',
+             last_seen: new Date().toISOString()
+           });
+           
+           if (profileError) {
+             console.error("Erro ao criar perfil:", profileError);
+           }
+
+           if (data.session) {
+             onRegister({ id: data.user.id, name: name || 'Usuário', email, role: 'student', status: 'pending', isOnline: true });
+           } else {
+             setError({ msg: "Conta criada! Verifique seu e-mail para ativar.", type: 'success' });
+           }
         }
       } else if (mode === 'login') {
         const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
@@ -93,7 +109,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister }) => {
             name: data.user.user_metadata?.full_name || 'Usuário',
             email: data.user.email!,
             role: data.user.email === 'ralysonriccelli@gmail.com' ? 'administrator' : 'student',
-            status: 'active',
+            status: 'pending', // Inicia como pendente até que o App.tsx valide o perfil real
             isOnline: true
           });
         }
