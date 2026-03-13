@@ -232,7 +232,13 @@ const App: React.FC = () => {
 
       if (role === 'administrator') {
         const { data: profiles } = await supabase.from('profiles').select('*');
-        if (profiles) setAllUsers(profiles.map(p => ({ ...p, id: String(p.id), name: p.name || 'Usuário', lastAccess: p.last_seen })));
+        if (profiles) setAllUsers(profiles.map(p => ({ 
+          ...p, 
+          id: String(p.id), 
+          name: p.name || 'Usuário', 
+          lastAccess: p.last_seen,
+          status: p.status || 'pending'
+        })));
       }
     } catch (e: any) {
       console.error("[Data-Sync] Falha no isolamento:", e);
@@ -244,28 +250,86 @@ const App: React.FC = () => {
   useEffect(() => {
     const init = async () => {
       if (!supabase) { setIsLoaded(true); return; }
-      const { data: { session } } = await supabase.auth.getSession();
       
-      if (session?.user) {
-        const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
-        const role = (profile?.role === 'admin' || profile?.role === 'administrator' || session.user.email === 'ralysonriccelli@gmail.com') ? 'administrator' : 'student';
+      try {
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
-        const u: User = {
-          id: session.user.id,
-          name: profile?.name || session.user.user_metadata?.full_name || 'Usuário',
-          email: session.user.email || '',
-          role: role as any,
-          status: 'active',
-          isOnline: true,
-          examDate: profile?.exam_date,
-          weeklyGoal: profile?.weekly_goal || 20
-        };
-        setUser(u);
-        fetchData(u.id, u.role);
+        if (sessionError) {
+          console.warn("[AUTH] Erro ao recuperar sessão:", sessionError.message);
+          if (sessionError.message.includes("Refresh Token")) {
+            await supabase.auth.signOut();
+          }
+          setIsLoaded(true);
+          return;
+        }
+
+        if (session?.user) {
+          const { data: profile, error: pError } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+          
+          let role = profile?.role || 'student';
+          let status = profile?.status || 'pending';
+
+          // Lógica de Role: Super Admin por e-mail
+          if (session.user.email === 'ralysonriccelli@gmail.com') {
+            role = 'administrator';
+            status = 'active';
+            
+            // Garantir que o banco de dados esteja atualizado e sincronizado
+            if (profile?.role !== 'administrator' || profile?.status !== 'active') {
+              const { error: upsertError } = await supabase.from('profiles').upsert({ 
+                id: session.user.id, 
+                role: 'administrator', 
+                status: 'active',
+                email: session.user.email,
+                name: profile?.name || session.user.user_metadata?.full_name || 'Admin'
+              });
+              if (upsertError) console.error("Erro ao promover admin:", upsertError);
+            }
+          } else if (role === 'admin') {
+            role = 'administrator';
+          }
+          
+          const u: User = {
+            id: session.user.id,
+            name: profile?.name || session.user.user_metadata?.full_name || 'Usuário',
+            email: session.user.email || '',
+            role: role as any,
+            status: status as any,
+            isOnline: true,
+            examDate: profile?.exam_date,
+            weeklyGoal: profile?.weekly_goal || 20
+          };
+          setUser(u);
+          
+          // Admins sempre buscam dados, estudantes só se ativos
+          if (u.status === 'active' || u.role === 'administrator') {
+            fetchData(u.id, u.role);
+          }
+        }
+      } catch (err) {
+        console.error("[AUTH] Erro fatal na inicialização:", err);
+      } finally {
+        setIsLoaded(true);
       }
-      setIsLoaded(true);
     };
+
     init();
+
+    // Listener para mudanças no estado de autenticação (expiração de token, logout em outra aba, etc)
+    const { data: { subscription } } = supabase?.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
+        if (!session && !loggingOutRef.current) {
+          setUser(null);
+        }
+      }
+      if (event === 'TOKEN_REFRESHED') {
+        console.log("[AUTH] Token atualizado com sucesso");
+      }
+    }) || { data: { subscription: null } };
+
+    return () => {
+      subscription?.unsubscribe();
+    };
   }, [fetchData]);
 
   const handleUpdateExamDate = async (date: string) => {
@@ -661,6 +725,35 @@ const App: React.FC = () => {
 
   if (!user) return <Login users={allUsers} onLogin={(u) => { setUser(u); fetchData(u.id, u.role); }} onRegister={(u) => { setUser(u); fetchData(u.id, u.role); }} />;
 
+  if (user && user.status !== 'active' && user.role !== 'administrator') {
+    return (
+      <div className="min-h-screen bg-study-dark flex items-center justify-center p-6 relative">
+        <div className="absolute inset-0 bg-slate-950/80 pointer-events-none"></div>
+        <div className="max-w-md w-full glass-card rounded-[3rem] p-12 relative z-10 border border-white/10 text-center shadow-2xl">
+          <div className="w-20 h-20 bg-indigo-500/10 text-indigo-400 rounded-[2.5rem] flex items-center justify-center mx-auto mb-8 border border-indigo-500/20">
+            <Timer size={40} className="animate-pulse" />
+          </div>
+          <h2 className="text-3xl font-black text-white uppercase tracking-tighter mb-4">ACESSO PENDENTE</h2>
+          <p className="text-slate-400 text-xs font-bold leading-relaxed uppercase tracking-widest mb-10">
+            Sua conta foi criada com sucesso! <br/>
+            No momento, estamos em fase de <span className="text-indigo-400">aprovação manual</span> para garantir a melhor experiência.
+          </p>
+          <div className="p-6 bg-white/5 rounded-2xl border border-white/5 mb-10">
+            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-relaxed">
+              Você receberá um e-mail assim que seu acesso for liberado pelo administrador.
+            </p>
+          </div>
+          <button 
+            onClick={handleLogout}
+            className="w-full py-4 text-[10px] font-black text-slate-500 hover:text-white uppercase tracking-[0.4em] transition-colors"
+          >
+            VOLTAR PARA O LOGIN
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const currentDateFormatted = currentTime.toLocaleDateString('pt-BR', {
     day: '2-digit',
     month: '2-digit',
@@ -721,11 +814,17 @@ const App: React.FC = () => {
               { id: 'revisao', label: 'SYNC', icon: <RefreshCcw size={16} />, roles: ['administrator', 'student', 'visitor'] },
               { id: 'ciclos', label: 'PLAN', icon: <Timer size={16} />, roles: ['administrator', 'student', 'visitor'] },
               { id: 'simulados', label: 'LOGS', icon: <BarChart2 size={16} />, roles: ['administrator', 'student', 'visitor'] },
-              { id: 'admin_users', label: 'GOV', icon: <Users size={16} />, roles: ['administrator'] },
-              { id: 'admin_editais', label: 'CORE', icon: <Settings size={16} />, roles: ['administrator'] },
+              { id: 'admin', label: 'GOVERNANÇA', icon: <ShieldCheck size={16} />, roles: ['administrator'], badge: allUsers.filter(u => u.status === 'pending').length },
             ].filter(i => i.roles.includes(user.role)).map(item => (
-              <button key={item.id} onClick={() => { setCurrentPage(item.id); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-6 py-3.5 rounded-lg text-[9px] font-black uppercase tracking-widest ${currentPage === item.id ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}>
-                {item.icon} {item.label}
+              <button key={item.id} onClick={() => { setCurrentPage(item.id); setIsSidebarOpen(false); }} className={`w-full flex items-center justify-between px-6 py-3.5 rounded-lg text-[9px] font-black uppercase tracking-widest ${currentPage === item.id ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}>
+                <div className="flex items-center gap-3">
+                  {item.icon} {item.label}
+                </div>
+                {item.badge > 0 && (
+                  <span className="bg-rose-500 text-white text-[8px] px-1.5 py-0.5 rounded-full animate-pulse">
+                    {item.badge}
+                  </span>
+                )}
               </button>
             ))}
           </nav>
@@ -773,8 +872,7 @@ const App: React.FC = () => {
             {currentPage === 'revisao' && <Revisao user={user} subjects={subjects || []} setSubjects={setSubjects as any} onAddLog={handleAddLogLocally} activeMatrixId={activeMatrixId} />}
             {currentPage === 'ciclos' && <Ciclos user={user} subjects={subjects || []} cycle={cycle} setCycle={setCycle} activeMatrixId={activeMatrixId} />}
             {currentPage === 'simulados' && <Simulados user={user} mocks={mocks} setMocks={setMocks} subjects={subjects || []} activeMatrixId={activeMatrixId} />}
-            {currentPage === 'admin_users' && <Admin user={user} users={allUsers} setUsers={setAllUsers} view="users" editais={editais} setEditais={setEditais} />}
-            {currentPage === 'admin_editais' && <Admin user={user} users={allUsers} setUsers={setAllUsers} view="editais" editais={editais} setEditais={setEditais} />}
+            {currentPage === 'admin' && <Admin user={user} users={allUsers} setUsers={setAllUsers} editais={editais} setEditais={setEditais} view="users" />}
           </div>
         </div>
       </main>
