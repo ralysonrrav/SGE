@@ -2,11 +2,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { User, PredefinedEdital, Subject, Topic } from '../types';
 import { supabase } from '../lib/supabase';
+import { notificationService } from '../services/notificationService';
 import { 
   Trash2, Edit3, X, Save, Search, Loader2, 
   Plus, ShieldCheck, CheckCircle2, Ban,
   FileText, Database, Calendar, Layers, RefreshCw,
-  ShieldX, Clock, Timer
+  ShieldX, Clock, Timer, Info
 } from 'lucide-react';
 
 interface AdminProps {
@@ -114,6 +115,15 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
     try {
       const { error } = await supabase.from('profiles').update({ status }).eq('id', userId);
       if (error) throw error;
+      
+      const targetUser = users.find(u => u.id === userId);
+      if (status === 'active' && targetUser) {
+        const result = await notificationService.sendApprovalEmail(targetUser.email, targetUser.name);
+        if (result && !result.success && result.error === 'SANDBOX_RESTRICTION') {
+          alert("AVISO DE E-MAIL: O usuário foi aprovado, mas o e-mail não foi enviado devido à restrição de teste (Sandbox) do Resend. \n\nNo modo gratuito, você só pode enviar e-mails para o seu próprio endereço (ralysonriccelli@gmail.com). \n\nPara enviar para outros usuários, você precisa verificar um domínio em resend.com/domains.");
+        }
+      }
+
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, status } : u));
     } catch (e: any) {
       alert(e.message);
@@ -286,6 +296,14 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
 
       if (error) throw error;
       
+      // Notificar se o status mudou para ativo
+      if (editUserStatus === 'active' && editingUser.status !== 'active') {
+        const result = await notificationService.sendApprovalEmail(editingUser.email, editUserName);
+        if (result && !result.success && result.error === 'SANDBOX_RESTRICTION') {
+          alert("AVISO DE E-MAIL: O usuário foi aprovado, mas o e-mail não foi enviado devido à restrição de teste (Sandbox) do Resend. \n\nNo modo gratuito, você só pode enviar e-mails para o seu próprio endereço (ralysonriccelli@gmail.com). \n\nPara enviar para outros usuários, você precisa verificar um domínio em resend.com/domains.");
+        }
+      }
+      
       setUsers(prev => prev.map(u => u.id === editingUser.id ? { 
         ...u, 
         name: editUserName, 
@@ -349,6 +367,10 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
         </div>
 
         <div className="flex gap-3">
+          <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl px-4 py-2 flex items-center gap-2">
+            <Info size={14} className="text-amber-500" />
+            <span className="text-[8px] font-black text-amber-500 uppercase tracking-widest">Notificações em modo Simulação</span>
+          </div>
           <div className="relative w-64">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={14}/>
             <input type="text" placeholder="PESQUISAR..." className="w-full pl-12 pr-6 py-4 bg-black/40 border border-white/5 rounded-2xl outline-none focus:border-indigo-500 font-black text-white text-[10px] tracking-widest uppercase transition-all" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
@@ -404,133 +426,143 @@ const Admin: React.FC<AdminProps> = ({ user, users, setUsers, editais, setEditai
               </div>
             </div>
           )}
-        <div className="glass-card rounded-[2.5rem] overflow-hidden border border-white/5 shadow-2xl">
-          <table className="w-full text-left">
-            <thead className="bg-white/5 border-b border-white/5">
-              <tr>
-                <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-widest">OPERADOR / UUID</th>
-                <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-widest">NÍVEL</th>
-                <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-widest">SITUAÇÃO</th>
-                <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-widest">SINAL</th>
-                <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-widest text-right">COMANDOS</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {filteredUsers.map(u => (
-                <tr key={u.id} className="hover:bg-white/[0.02] transition-all group">
-                  <td className="px-10 py-6">
-                    <div className="flex items-center gap-5">
-                      <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center font-black">
-                        {u.name?.charAt(0).toUpperCase()}
-                      </div>
-                      <div>
-                        <p className="text-sm font-black text-white uppercase tracking-tight">{u.name}</p>
-                        <p className="text-[9px] text-slate-600 font-bold lowercase mt-0.5">{u.email}</p>
-                        <div className="flex items-center gap-2 mt-2">
-                           <Clock size={10} className="text-slate-700" />
-                           <span className="text-[8px] font-black text-slate-700 uppercase tracking-tighter">
-                             {(u as any).totalStudyTime ? `${Math.floor((u as any).totalStudyTime / 60)}h ${(u as any).totalStudyTime % 60}m` : '0h 0m'}
-                           </span>
+
+          {filteredUsers.length === 0 && !isRefreshing && (
+            <div className="p-20 text-center glass-card rounded-[3rem] border border-dashed border-white/10">
+              <RefreshCw size={40} className="mx-auto text-slate-700 mb-4 opacity-20" />
+              <p className="text-slate-500 font-black text-[10px] uppercase tracking-[0.4em]">Nenhum operador encontrado no ecossistema</p>
+              <button onClick={refreshData} className="mt-6 text-indigo-400 font-black text-[9px] uppercase tracking-widest hover:text-indigo-300">Sincronizar Banco de Dados</button>
+            </div>
+          )}
+          {filteredUsers.length > 0 && (
+            <div className="glass-card rounded-[2.5rem] overflow-hidden border border-white/5 shadow-2xl">
+              <table className="w-full text-left">
+                <thead className="bg-white/5 border-b border-white/5">
+                  <tr>
+                    <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-widest">OPERADOR / UUID</th>
+                    <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-widest">NÍVEL</th>
+                    <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-widest">SITUAÇÃO</th>
+                    <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-widest">SINAL</th>
+                    <th className="px-10 py-7 text-[9px] font-black uppercase text-slate-500 tracking-widest text-right">COMANDOS</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {filteredUsers.map(u => (
+                    <tr key={u.id} className="hover:bg-white/[0.02] transition-all group">
+                      <td className="px-10 py-6">
+                        <div className="flex items-center gap-5">
+                          <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center font-black">
+                            {u.name?.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="text-sm font-black text-white uppercase tracking-tight">{u.name}</p>
+                            <p className="text-[9px] text-slate-600 font-bold lowercase mt-0.5">{u.email}</p>
+                            <div className="flex items-center gap-2 mt-2">
+                               <Clock size={10} className="text-slate-700" />
+                               <span className="text-[8px] font-black text-slate-700 uppercase tracking-tighter">
+                                 {(u as any).totalStudyTime ? `${Math.floor((u as any).totalStudyTime / 60)}h ${(u as any).totalStudyTime % 60}m` : '0h 0m'}
+                               </span>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-10 py-6">
-                    <select 
-                      value={u.role} 
-                      onChange={(e) => handleQuickRoleUpdate(u.id, e.target.value)}
-                      disabled={loadingId === u.id || u.id === user.id}
-                      className="bg-white/5 border border-white/5 rounded-lg text-[8px] font-black uppercase text-indigo-400 px-3 py-1.5 outline-none focus:border-indigo-500 transition-all cursor-pointer disabled:opacity-50"
-                    >
-                      <option value="student">ESTUDANTE</option>
-                      <option value="mentor">MENTOR</option>
-                      <option value="administrator">ADMIN</option>
-                    </select>
-                  </td>
-                  <td className="px-10 py-6">
-                     <div className="flex items-center gap-3">
-                        <span className={`px-3 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest flex items-center gap-2 border ${
-                          u.status === 'active' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' :
-                          u.status === 'pending' ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' :
-                          'bg-rose-500/10 border-rose-500/20 text-rose-500'
-                        }`}>
-                          {u.status === 'active' ? <CheckCircle2 size={10}/> : u.status === 'pending' ? <Timer size={10}/> : <Ban size={10}/>}
-                          {u.status?.toUpperCase() || 'ATIVO'}
-                        </span>
-                        
-                        {u.status === 'pending' && (
-                          <button 
-                            onClick={() => handleQuickStatusUpdate(u.id, 'active')}
-                            disabled={loadingId === u.id}
-                            className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-[8px] font-black uppercase hover:bg-emerald-500 transition-all shadow-lg shadow-emerald-900/20 flex items-center gap-2"
-                          >
-                            {loadingId === u.id ? <Loader2 size={10} className="animate-spin" /> : <ShieldCheck size={10} />}
-                            APROVAR AGORA
-                          </button>
-                        )}
-
-                        {u.status === 'active' && u.id !== user.id && (
-                          <div className="flex gap-2">
-                            <button 
-                              onClick={() => handleQuickStatusUpdate(u.id, 'blocked')}
-                              disabled={loadingId === u.id}
-                              className="p-2 bg-rose-500/20 text-rose-500 rounded-lg hover:bg-rose-500 hover:text-white transition-all"
-                              title="Bloquear Usuário"
-                            >
-                              <Ban size={14} />
-                            </button>
-                            <button 
-                              onClick={() => handleQuickStatusUpdate(u.id, 'pending')}
-                              disabled={loadingId === u.id}
-                              className="p-2 bg-amber-500/20 text-amber-500 rounded-lg hover:bg-amber-500 hover:text-white transition-all"
-                              title="Mover para Pendente"
-                            >
-                              <Timer size={14} />
-                            </button>
-                          </div>
-                        )}
-
-                        {u.status === 'blocked' && (
-                          <div className="flex gap-2">
-                            <button 
-                              onClick={() => handleQuickStatusUpdate(u.id, 'active')}
-                              disabled={loadingId === u.id}
-                              className="p-2 bg-indigo-500/20 text-indigo-500 rounded-lg hover:bg-indigo-500 hover:text-white transition-all"
-                              title="Desbloquear Usuário"
-                            >
-                              <RefreshCw size={14} />
-                            </button>
-                            <button 
-                              onClick={() => handleQuickStatusUpdate(u.id, 'pending')}
-                              disabled={loadingId === u.id}
-                              className="p-2 bg-amber-500/20 text-amber-500 rounded-lg hover:bg-amber-500 hover:text-white transition-all"
-                              title="Mover para Pendente"
-                            >
-                              <Timer size={14} />
-                            </button>
-                          </div>
-                        )}
-                     </div>
-                  </td>
-                  <td className="px-10 py-6">
-                     <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${u.isOnline ? 'bg-indigo-500 pulse-ring' : 'bg-slate-800'}`} />
-                        <span className={`text-[8px] font-black uppercase tracking-widest ${u.isOnline ? 'text-indigo-500' : 'text-slate-700'}`}>
-                          {u.isOnline ? 'ESTAÇÃO ONLINE' : 'OFFLINE'}
-                        </span>
-                     </div>
-                  </td>
-                  <td className="px-10 py-6 text-right">
-                    <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-all">
-                      <button onClick={() => { setEditingUser(u); setIsUserModalOpen(true); }} className="p-3 bg-white/5 text-slate-400 hover:text-indigo-400 rounded-xl transition-all"><Edit3 size={16}/></button>
-                      <button onClick={() => { setUserToPurge(u); setShowConfirmDelete(true); }} disabled={u.id === user.id} className="p-3 bg-white/5 text-slate-400 hover:text-rose-500 rounded-xl transition-all"><Trash2 size={16}/></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                      </td>
+                      <td className="px-10 py-6">
+                        <select 
+                          value={u.role} 
+                          onChange={(e) => handleQuickRoleUpdate(u.id, e.target.value)}
+                          disabled={loadingId === u.id || u.id === user.id}
+                          className="bg-white/5 border border-white/5 rounded-lg text-[8px] font-black uppercase text-indigo-400 px-3 py-1.5 outline-none focus:border-indigo-500 transition-all cursor-pointer disabled:opacity-50"
+                        >
+                          <option value="student">ESTUDANTE</option>
+                          <option value="mentor">MENTOR</option>
+                          <option value="administrator">ADMIN</option>
+                        </select>
+                      </td>
+                      <td className="px-10 py-6">
+                         <div className="flex items-center gap-3">
+                            <span className={`px-3 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest flex items-center gap-2 border ${
+                              u.status === 'active' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' :
+                              u.status === 'pending' ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' :
+                              'bg-rose-500/10 border-rose-500/20 text-rose-500'
+                            }`}>
+                              {u.status === 'active' ? <CheckCircle2 size={10}/> : u.status === 'pending' ? <Timer size={10}/> : <Ban size={10}/>}
+                              {u.status?.toUpperCase() || 'ATIVO'}
+                            </span>
+                            
+                            {u.status === 'pending' && (
+                              <button 
+                                onClick={() => handleQuickStatusUpdate(u.id, 'active')}
+                                disabled={loadingId === u.id}
+                                className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-[8px] font-black uppercase hover:bg-emerald-500 transition-all shadow-lg shadow-emerald-900/20 flex items-center gap-2"
+                              >
+                                {loadingId === u.id ? <Loader2 size={10} className="animate-spin" /> : <ShieldCheck size={10} />}
+                                APROVAR AGORA
+                              </button>
+                            )}
+    
+                            {u.status === 'active' && u.id !== user.id && (
+                              <div className="flex gap-2">
+                                <button 
+                                  onClick={() => handleQuickStatusUpdate(u.id, 'blocked')}
+                                  disabled={loadingId === u.id}
+                                  className="p-2 bg-rose-500/20 text-rose-500 rounded-lg hover:bg-rose-500 hover:text-white transition-all"
+                                  title="Bloquear Usuário"
+                                >
+                                  <Ban size={14} />
+                                </button>
+                                <button 
+                                  onClick={() => handleQuickStatusUpdate(u.id, 'pending')}
+                                  disabled={loadingId === u.id}
+                                  className="p-2 bg-amber-500/20 text-amber-500 rounded-lg hover:bg-amber-500 hover:text-white transition-all"
+                                  title="Mover para Pendente"
+                                >
+                                  <Timer size={14} />
+                                </button>
+                              </div>
+                            )}
+    
+                            {u.status === 'blocked' && (
+                              <div className="flex gap-2">
+                                <button 
+                                  onClick={() => handleQuickStatusUpdate(u.id, 'active')}
+                                  disabled={loadingId === u.id}
+                                  className="p-2 bg-indigo-500/20 text-indigo-500 rounded-lg hover:bg-indigo-500 hover:text-white transition-all"
+                                  title="Desbloquear Usuário"
+                                >
+                                  <RefreshCw size={14} />
+                                </button>
+                                <button 
+                                  onClick={() => handleQuickStatusUpdate(u.id, 'pending')}
+                                  disabled={loadingId === u.id}
+                                  className="p-2 bg-amber-500/20 text-amber-500 rounded-lg hover:bg-amber-500 hover:text-white transition-all"
+                                  title="Mover para Pendente"
+                                >
+                                  <Timer size={14} />
+                                </button>
+                              </div>
+                            )}
+                         </div>
+                      </td>
+                      <td className="px-10 py-6">
+                         <div className="flex items-center gap-2">
+                            <div className={`w-2 h-2 rounded-full ${u.isOnline ? 'bg-indigo-500 pulse-ring' : 'bg-slate-800'}`} />
+                            <span className={`text-[8px] font-black uppercase tracking-widest ${u.isOnline ? 'text-indigo-500' : 'text-slate-700'}`}>
+                              {u.isOnline ? 'ESTAÇÃO ONLINE' : 'OFFLINE'}
+                            </span>
+                         </div>
+                      </td>
+                      <td className="px-10 py-6 text-right">
+                        <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-all">
+                          <button onClick={() => { setEditingUser(u); setIsUserModalOpen(true); }} className="p-3 bg-white/5 text-slate-400 hover:text-indigo-400 rounded-xl transition-all"><Edit3 size={16}/></button>
+                          <button onClick={() => { setUserToPurge(u); setShowConfirmDelete(true); }} disabled={u.id === user.id} className="p-3 bg-white/5 text-slate-400 hover:text-rose-500 rounded-xl transition-all"><Trash2 size={16}/></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
       </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

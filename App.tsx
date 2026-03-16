@@ -230,7 +230,7 @@ const App: React.FC = () => {
         }
       }
 
-      if (role === 'administrator') {
+      if (role === 'administrator' || role === 'admin') {
         const { data: profiles } = await supabase.from('profiles').select('*');
         if (profiles) setAllUsers(profiles.map(p => ({ 
           ...p, 
@@ -264,8 +264,22 @@ const App: React.FC = () => {
         }
 
         if (session?.user) {
-          const { data: profile, error: pError } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+          const { data: profileRes, error: pError } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+          let profile = profileRes;
           
+          if (!profile && !pError) {
+            console.log("[AUTH] Perfil não encontrado, criando...");
+            const { data: newProfile, error: createError } = await supabase.from('profiles').insert({
+              id: session.user.id,
+              name: session.user.user_metadata?.full_name || 'Usuário',
+              email: session.user.email,
+              role: session.user.email === 'ralysonriccelli@gmail.com' ? 'administrator' : 'student',
+              status: session.user.email === 'ralysonriccelli@gmail.com' ? 'active' : 'pending'
+            }).select().single();
+            
+            if (!createError) profile = newProfile;
+          }
+
           let role = profile?.role || 'student';
           let status = profile?.status || 'pending';
 
@@ -331,6 +345,47 @@ const App: React.FC = () => {
       subscription?.unsubscribe();
     };
   }, [fetchData]);
+
+  // Listener para mudanças no perfil do usuário (Real-time approval)
+  useEffect(() => {
+    if (!user?.id || !supabase) return;
+
+    const profileSubscription = supabase
+      .channel(`profile-${user.id}`)
+      .on('postgres_changes', { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: 'profiles', 
+        filter: `id=eq.${user.id}` 
+      }, (payload) => {
+        console.log("[AUTH] Perfil atualizado em tempo real:", payload.new);
+        const newProfile = payload.new;
+        
+        setUser(prev => {
+          if (!prev) return null;
+          // Só atualiza se houver mudança real para evitar loops
+          if (prev.status === newProfile.status && prev.role === newProfile.role && prev.name === newProfile.name) {
+            return prev;
+          }
+          return {
+            ...prev,
+            role: newProfile.role as any,
+            status: newProfile.status as any,
+            name: newProfile.name || prev.name
+          };
+        });
+        
+        // Se o usuário foi ativado agora, buscar os dados
+        if (newProfile.status === 'active' && user.status !== 'active') {
+          fetchData(user.id, newProfile.role);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      profileSubscription.unsubscribe();
+    };
+  }, [user?.id, user?.status, fetchData]);
 
   const handleUpdateExamDate = async (date: string) => {
     if (!user || !supabase) return;

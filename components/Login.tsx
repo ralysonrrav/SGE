@@ -104,13 +104,28 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister }) => {
         const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw signInError;
         if (data.session && data.user) {
+          // Buscar o perfil real do banco de dados para obter o status e role atualizados
+          const { data: profile, error: pError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', data.user.id)
+            .single();
+
+          if (pError && pError.code !== 'PGRST116') { // PGRST116 is "no rows returned"
+            console.error("Erro ao buscar perfil:", pError);
+          }
+
+          const role = profile?.role || (data.user.email === 'ralysonriccelli@gmail.com' ? 'administrator' : 'student');
+          const status = profile?.status || 'pending';
+
           onLogin({
             id: data.user.id,
-            name: data.user.user_metadata?.full_name || 'Usuário',
+            name: profile?.name || data.user.user_metadata?.full_name || 'Usuário',
             email: data.user.email!,
-            role: data.user.email === 'ralysonriccelli@gmail.com' ? 'administrator' : 'student',
-            status: 'pending', // Inicia como pendente até que o App.tsx valide o perfil real
-            isOnline: true
+            role: role as any,
+            status: status as any,
+            isOnline: true,
+            weeklyGoal: profile?.weekly_goal || 20
           });
         }
       } else if (mode === 'forgot') {
