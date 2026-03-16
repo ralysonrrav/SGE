@@ -15,10 +15,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: "E-mail e nome são obrigatórios" });
   }
 
-  // 1. Tentar Nodemailer (Gmail)
   const smtpUser = process.env.SMTP_USER;
   const smtpPass = process.env.SMTP_PASS;
+  const resendKey = process.env.RESEND_API_KEY;
 
+  console.log(`[Vercel API] Tentando enviar e-mail para ${email}. Configurações encontradas: SMTP_USER=${!!smtpUser}, SMTP_PASS=${!!smtpPass}, RESEND_API_KEY=${!!resendKey}`);
+
+  // 1. Tentar Nodemailer (Gmail)
   if (smtpUser && smtpPass) {
     try {
       const transporter = nodemailer.createTransport({
@@ -46,11 +49,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ success: true, method: 'nodemailer' });
     } catch (err: any) {
       console.error("[Vercel API] Erro Nodemailer:", err);
+      // Se falhar e não tiver Resend, retorna o erro aqui
+      if (!resendKey) {
+        return res.status(500).json({ error: `Erro no Gmail: ${err.message}` });
+      }
     }
   }
 
   // 2. Tentar Resend (como fallback)
-  const resendKey = process.env.RESEND_API_KEY;
   if (resendKey) {
     try {
       const resend = new Resend(resendKey);
@@ -78,14 +84,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             code: 'SANDBOX_RESTRICTION'
           });
         }
-        return res.status(500).json({ error: error.message });
+        return res.status(500).json({ error: `Erro no Resend: ${error.message}` });
       }
 
       return res.status(200).json({ success: true, data });
     } catch (err: any) {
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: `Erro fatal no Resend: ${err.message}` });
     }
   }
 
-  return res.status(500).json({ error: "Nenhuma configuração de e-mail encontrada no servidor." });
+  // Se chegou aqui, nada foi configurado
+  const missing = [];
+  if (!smtpUser) missing.push('SMTP_USER');
+  if (!smtpPass) missing.push('SMTP_PASS');
+  if (!resendKey) missing.push('RESEND_API_KEY');
+
+  return res.status(500).json({ 
+    error: `Configuração incompleta. Variáveis ausentes na Vercel: ${missing.join(', ')}. Certifique-se de fazer um novo Deploy após adicionar as variáveis.` 
+  });
 }
